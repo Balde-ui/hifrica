@@ -12,7 +12,7 @@ export interface PaymentPendingEvent extends BaseEvent {
   projectId: string;
   simulator: string;
   endpointId: string;
-  amount: number | string;
+  amount: number;
   currency?: string;
   merchant?: string;
   screen: "confirm-payment";
@@ -105,7 +105,7 @@ export function isHifricaEvent(value: unknown): value is HifricaEvent {
   switch (type as HifricaEventType) {
     case "payment.pending":
       return (
-        (typeof obj.amount === "number" || typeof obj.amount === "string") &&
+        typeof obj.amount === "number" &&
         obj.screen === "confirm-payment" &&
         typeof obj.text === "string"
       );
