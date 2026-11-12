@@ -1,9 +1,22 @@
+import { randomUUID } from "node:crypto";
 import Fastify from "fastify";
-import { setTimeout as sleep } from "node:timers/promises";
-import { conditionHolds, loadSimulators, matchPath } from "./simulators.js";
+import { authenticate, resolveScenario } from "./auth.js";
+import { publishEvent } from "./events.js";
+import { registerRequestLogging } from "./logs.js";
+import { buildResponse, findEndpoint, paymentPendingEvent } from "./response.js";
+import { loadSimulators } from "./simulators.js";
 import { parseDelay, render } from "./template.js";
+import { registerUssd } from "./ussd.js";
+import { scheduleWebhook } from "./webhooks.js";
 
-const app = Fastify({ logger: true, bodyLimit: 64 * 1024 });
+const app = Fastify({ logger: true, bodyLimit: 64 * 1024, genReqId: () => randomUUID() });
+
+app.addHook("onSend", async (request, reply, payload) => {
+  reply.header("X-Hifrica-Request-Id", request.id);
+  return payload;
+});
+registerRequestLogging(app);
+
 const simulators = loadSimulators(process.env.SIMULATORS_DIR ?? "/simulators", (m) => app.log.info(m));
 
 app.get("/health", async () => ({ status: "ok", service: "engine", simulators: [...simulators.keys()] }));
@@ -13,43 +26,53 @@ app.all<{ Params: { simulator: string; "*": string } }>("/:simulator/*", async (
   const sim = simulators.get(req.params.simulator);
   if (!sim || sim.kind !== "http") return reply.code(404).send({ error: "simulator_not_found" });
 
-  // Clé de test obligatoire. TODO (Dev C) : vérifier la clé hachée en base et le projet associé.
-  const auth = req.headers.authorization ?? "";
-  if (!auth.startsWith("Bearer sk_test_")) return reply.code(401).send({ error: "invalid_test_key" });
+  const auth = await authenticate(req);
+  if (!auth.ok) return reply.code(401).send({ error: "invalid_test_key" });
+  const { projectId } = auth;
 
   const path = "/" + req.params["*"];
-  for (const endpoint of sim.endpoints ?? []) {
-    if (endpoint.method !== req.method) continue;
-    const params = matchPath(endpoint.path, path);
-    if (!params) continue;
+  const found = findEndpoint(sim, req.method, path);
+  if (!found) return reply.code(404).send({ error: "endpoint_not_found", path });
+  const { endpoint, params } = found;
 
-    const ctx = {
-      body: (req.body ?? {}) as Record<string, unknown>,
-      query: req.query as Record<string, unknown>,
-      params,
-    };
+  const ctx = {
+    body: (req.body ?? {}) as Record<string, unknown>,
+    query: req.query as Record<string, unknown>,
+    params,
+  };
+  const scenarioKey = await resolveScenario(req, projectId);
+  const response = await buildResponse(sim, endpoint, scenarioKey, ctx);
 
-    // Scénario actif. TODO (Dev C) : lire le scénario actif du projet en base ; en attendant, en-tête de test.
-    const scenarioKey = req.headers["x-hifrica-scenario"];
-    const scenario = typeof scenarioKey === "string" ? sim.scenarios?.[scenarioKey] : undefined;
-    let response = endpoint.response;
-    if (scenario && scenario.endpoint === endpoint.id) {
-      const matches = Object.entries(scenario.match ?? {}).every(([field, expected]) => {
-        const [root, key] = field.split(".");
-        const source = root === "body" ? ctx.body : root === "query" ? ctx.query : {};
-        return conditionHolds(expected, source[key]);
-      });
-      if (matches) {
-        await sleep(parseDelay(scenario.delay));
-        if (scenario.response) response = scenario.response;
+  // Effets de bord uniquement sur succès : un 402 (solde insuffisant) ne crée ni session ni webhook.
+  if (response.status >= 200 && response.status < 300) {
+    if (endpoint.phone) {
+      const event = paymentPendingEvent({ projectId, simulator: sim.name, endpoint, ctx, response });
+      if (event) {
+        await publishEvent(event, req.log).catch((err: unknown) => req.log.error({ err }, "publishEvent a échoué"));
+      } else {
+        req.log.warn({ endpointId: endpoint.id }, "bloc phone sans payment.pending (écran non géré, id ou amount absent)");
       }
     }
-
-    // TODO (Dev A) : webhooks différés signés HMAC via BullMQ ; TODO (Dev B) : événements vers le téléphone simulé.
-    return reply.code(response.status).headers(response.headers ?? {}).send(render(response.body ?? {}, ctx));
+    // Les webhooks avec "on" (ex. phone.confirm) seront déclenchés par l'événement correspondant (A4).
+    if (endpoint.webhook && !endpoint.webhook.on) {
+      await scheduleWebhook(
+        {
+          projectId,
+          simulator: sim.name,
+          requestId: req.id,
+          event: endpoint.webhook.event,
+          body: render(endpoint.webhook.body ?? {}, ctx),
+          delayMs: parseDelay(endpoint.webhook.after),
+        },
+        req.log,
+      ).catch((err: unknown) => req.log.error({ err }, "scheduleWebhook a échoué"));
+    }
   }
-  return reply.code(404).send({ error: "endpoint_not_found", path });
+
+  return reply.code(response.status).headers(response.headers).send(response.body);
 });
+
+registerUssd(app, simulators);
 
 const port = Number(process.env.PORT ?? 4000);
 app.listen({ host: "0.0.0.0", port }).catch((err) => {

@@ -2,11 +2,26 @@ import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { validateSimulatorYaml } from "@hifrica/shared";
 
+export interface PhoneBlock {
+  screen?: "confirm-payment" | "sms" | "notification";
+  text?: string;
+}
+
+export interface WebhookBlock {
+  /** Déclencheur (ex. phone.confirm) ; absent = envoi différé après la réponse. */
+  on?: string;
+  after?: string;
+  event: string;
+  body?: unknown;
+}
+
 export interface Endpoint {
   id: string;
   method: string;
   path: string;
   response: { status: number; headers?: Record<string, string>; body?: unknown };
+  phone?: PhoneBlock;
+  webhook?: WebhookBlock;
 }
 
 export interface Scenario {
