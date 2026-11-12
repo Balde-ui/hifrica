@@ -2,9 +2,9 @@
 // Boucle génération → validation (JSON Schema partagé) → correction, avec bascule de fournisseur.
 import { validateSimulatorYaml } from "@hifrica/shared";
 import { buildCorrectionPrompt, type SimulatorKind } from "./prompt.js";
-import { ProviderError, type ChatMessage, type Provider, type ProviderName } from "./providers.js";
+import { ProviderError, type ChatMessage, type Provider, type ProviderLogger, type ProviderName } from "./providers.js";
 
-export const MAX_ATTEMPTS = 3; // 1 génération + 2 corrections
+export const MAX_ATTEMPTS = 3; // 1 génération + 2 corrections (les réessais sur réponse vide ne comptent pas)
 
 export interface GenerateResult {
   valid: boolean;
@@ -29,6 +29,8 @@ export interface GenerateOptions {
   kind?: SimulatorKind;
   /** Appelé à chaque échec de fournisseur (nom + raison courte uniquement). */
   onProviderError?: (provider: ProviderName, reason: string) => void;
+  /** Logger de la requête, transmis aux fournisseurs (métadonnées d'appel uniquement). */
+  log?: ProviderLogger;
 }
 
 function validate(yaml: string, kind?: SimulatorKind): string[] {
@@ -40,7 +42,7 @@ function validate(yaml: string, kind?: SimulatorKind): string[] {
 }
 
 export async function generateSimulator(opts: GenerateOptions): Promise<GenerateResult> {
-  const { providers, system, userPrompt, kind, onProviderError } = opts;
+  const { providers, system, userPrompt, kind, onProviderError, log } = opts;
   if (providers.length === 0) throw new AiUnavailableError();
 
   const messages: ChatMessage[] = [{ role: "user", content: userPrompt }];
@@ -52,7 +54,7 @@ export async function generateSimulator(opts: GenerateOptions): Promise<Generate
     while (current < providers.length) {
       const provider = providers[current];
       try {
-        yaml = await provider.complete(system, messages);
+        yaml = await provider.complete(system, messages, log);
         break;
       } catch (err) {
         onProviderError?.(provider.name, err instanceof ProviderError ? err.reason : "error");

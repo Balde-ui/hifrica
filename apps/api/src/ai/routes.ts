@@ -68,6 +68,7 @@ export const aiRoutes: FastifyPluginAsync<AiRoutesOptions> = async (app, opts) =
         userPrompt: buildUserPrompt(maskSensitive(body.description), body.kind),
         kind: body.kind,
         onProviderError: (provider, reason) => req.log.warn({ provider, reason }, "fournisseur IA en échec"),
+        log: req.log,
       });
       const status = result.valid ? 200 : 422;
       req.log.info(
