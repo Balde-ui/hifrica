@@ -3,6 +3,7 @@ import { parse } from "yaml";
 import { simulatorSchema } from "./schema.js";
 
 export { simulatorSchema };
+export * from "./events.js";
 
 export const MAX_YAML_BYTES = 64 * 1024;
 
