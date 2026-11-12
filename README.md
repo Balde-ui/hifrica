@@ -49,3 +49,4 @@ Chaque push sur `main` lance la CI (build et contrôle des licences), puis dépl
 - Composants tiers et licences : [`LICENSES.md`](LICENSES.md)
 - Usage de l'IA : [`AI_USAGE.md`](AI_USAGE.md)
 - Code : tous droits réservés, voir [`LICENSE`](LICENSE)
+
