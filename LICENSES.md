@@ -25,13 +25,17 @@ Déclaration exigée par l'article 6 du règlement CADEV 2026. Toutes les licenc
 | @fastify/forwarded | 3.1.2 | MIT |
 | @fastify/merge-json-schemas | 0.2.2 | MIT |
 | @fastify/proxy-addr | 5.1.2 | MIT |
+| @ioredis/commands | 2.0.0 | MIT |
 | @pinojs/redact | 0.4.0 | MIT |
 | abstract-logging | 2.0.1 | MIT |
 | ajv | 8.20.0 | MIT |
 | ajv-formats | 3.0.1 | MIT |
 | atomic-sleep | 1.0.0 | MIT |
 | avvio | 9.3.1 | MIT |
+| cluster-key-slot | 1.1.1 | Apache-2.0 |
 | cookie | 2.0.2 | MIT |
+| debug | 4.4.3 | MIT |
+| denque | 2.1.0 | Apache-2.0 |
 | dequal | 2.0.3 | MIT |
 | fast-decode-uri-component | 1.0.1 | MIT |
 | fast-deep-equal | 3.1.3 | MIT |
@@ -41,10 +45,12 @@ Déclaration exigée par l'article 6 du règlement CADEV 2026. Toutes les licenc
 | fastify | 5.12.8 | MIT |
 | fastq | 1.20.3 | ISC |
 | find-my-way | 9.10.0 | MIT |
+| ioredis | 6.0.0 | MIT |
 | ipaddr.js | 2.5.0 | MIT |
 | json-schema-ref-resolver | 3.0.1 | MIT |
 | json-schema-traverse | 1.0.0 | MIT |
 | light-my-request | 6.8.0 | BSD-3-Clause |
+| ms | 2.1.3 | MIT |
 | on-exit-leak-free | 2.1.2 | MIT |
 | pino | 10.4.0 | MIT |
 | pino-abstract-transport | 3.0.0 | MIT |
@@ -54,6 +60,7 @@ Déclaration exigée par l'article 6 du règlement CADEV 2026. Toutes les licenc
 | react | 19.3.1 | MIT |
 | react-dom | 19.3.1 | MIT |
 | real-require | 1.0.0 | MIT |
+| redis-errors | 1.2.0 | MIT |
 | require-from-string | 2.0.2 | MIT |
 | ret | 0.5.1 | MIT |
 | reusify | 1.1.0 | MIT |
@@ -66,6 +73,7 @@ Déclaration exigée par l'article 6 du règlement CADEV 2026. Toutes les licenc
 | set-cookie-parser | 3.2.2 | MIT |
 | sonic-boom | 4.2.1 | MIT |
 | split2 | 4.2.0 | ISC |
+| standard-as-callback | 2.1.0 | MIT |
 | thread-stream | 4.2.1 | MIT |
 | toad-cache | 3.7.4 | MIT |
 | yaml | 2.9.1 | ISC |

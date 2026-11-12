@@ -2,7 +2,15 @@
 // Boucle génération → validation (JSON Schema partagé) → correction, avec bascule de fournisseur.
 import { validateSimulatorYaml } from "@hifrica/shared";
 import { buildCorrectionPrompt, type SimulatorKind } from "./prompt.js";
-import { ProviderError, type ChatMessage, type Provider, type ProviderLogger, type ProviderName } from "./providers.js";
+import {
+  GenerationAbortedError,
+  ProviderError,
+  type CallContext,
+  type ChatMessage,
+  type Provider,
+  type ProviderLogger,
+  type ProviderName,
+} from "./providers.js";
 
 export const MAX_ATTEMPTS = 3; // 1 génération + 2 corrections (les réessais sur réponse vide ne comptent pas)
 
@@ -31,6 +39,8 @@ export interface GenerateOptions {
   onProviderError?: (provider: ProviderName, reason: string) => void;
   /** Logger de la requête, transmis aux fournisseurs (métadonnées d'appel uniquement). */
   log?: ProviderLogger;
+  /** Annulation et budget d'appels de la requête (sans : illimité, jamais annulé). */
+  ctx?: CallContext;
 }
 
 function validate(yaml: string, kind?: SimulatorKind): string[] {
@@ -42,7 +52,7 @@ function validate(yaml: string, kind?: SimulatorKind): string[] {
 }
 
 export async function generateSimulator(opts: GenerateOptions): Promise<GenerateResult> {
-  const { providers, system, userPrompt, kind, onProviderError, log } = opts;
+  const { providers, system, userPrompt, kind, onProviderError, log, ctx } = opts;
   if (providers.length === 0) throw new AiUnavailableError();
 
   const messages: ChatMessage[] = [{ role: "user", content: userPrompt }];
@@ -54,9 +64,17 @@ export async function generateSimulator(opts: GenerateOptions): Promise<Generate
     while (current < providers.length) {
       const provider = providers[current];
       try {
-        yaml = await provider.complete(system, messages, log);
+        yaml = await provider.complete(system, messages, log, ctx);
         break;
       } catch (err) {
+        if (err instanceof GenerationAbortedError) {
+          // Client parti ou échéance : on arrête tout, l'appelant répond (ou non).
+          if (err.reason !== "call_limit") throw err;
+          // Budget d'appels épuisé : on rend le dernier YAML obtenu s'il existe.
+          onProviderError?.(provider.name, "call_limit");
+          if (last) return last;
+          throw new AiUnavailableError();
+        }
         onProviderError?.(provider.name, err instanceof ProviderError ? err.reason : "error");
         current++;
       }

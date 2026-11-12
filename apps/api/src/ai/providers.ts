@@ -18,7 +18,47 @@ export interface Provider {
    * Renvoie le YAML extrait de la réponse json {"yaml": "..."} du modèle.
    * Une réponse vide ou illisible est réessayée une fois chez le même fournisseur avant d'échouer.
    */
-  complete(system: string, messages: ChatMessage[], log?: ProviderLogger): Promise<string>;
+  complete(system: string, messages: ChatMessage[], log?: ProviderLogger, ctx?: CallContext): Promise<string>;
+}
+
+/**
+ * Contexte d'une requête de génération, partagé par tous les appels : signal d'annulation (client
+ * déconnecté, échéance globale) et budget d'appels HTTP (réessais et bascules compris).
+ */
+export interface CallContext {
+  signal: AbortSignal;
+  /** Réserve un appel ; false si le budget est épuisé. */
+  take(): boolean;
+}
+
+export const MAX_CALLS_PER_REQUEST = 6;
+
+export function createCallContext(signal: AbortSignal, maxCalls = MAX_CALLS_PER_REQUEST): CallContext {
+  let used = 0;
+  return {
+    signal,
+    take() {
+      if (used >= maxCalls) return false;
+      used++;
+      return true;
+    },
+  };
+}
+
+const unlimitedContext: CallContext = { signal: new AbortController().signal, take: () => true };
+
+/** Arrêt de toute la génération : client parti, échéance globale dépassée ou budget d'appels épuisé. */
+export class GenerationAbortedError extends Error {
+  constructor(readonly reason: "client_closed" | "deadline" | "call_limit") {
+    super(`generation_aborted: ${reason}`);
+    this.name = "GenerationAbortedError";
+  }
+}
+
+function abortReason(signal: AbortSignal): GenerationAbortedError {
+  const reason: unknown = signal.reason;
+  if (reason instanceof GenerationAbortedError) return reason;
+  return new GenerationAbortedError(reason instanceof Error && reason.name === "TimeoutError" ? "deadline" : "client_closed");
 }
 
 /** Échec d'un fournisseur. `reason` est court et sans donnée sensible (jamais le corps de la réponse). */
@@ -71,16 +111,22 @@ async function postJson(
   url: string,
   headers: Record<string, string>,
   body: unknown,
+  ctx: CallContext,
 ): Promise<unknown> {
+  if (ctx.signal.aborted) throw abortReason(ctx.signal);
+  if (!ctx.take()) throw new GenerationAbortedError("call_limit");
+  // Timeout de 30 s par appel, combiné à l'annulation de la requête (déconnexion, échéance globale).
+  const signal = AbortSignal.any([ctx.signal, AbortSignal.timeout(TIMEOUT_MS)]);
   let res: Response;
   try {
     res = await fetchImpl(url, {
       method: "POST",
       headers: { "Content-Type": "application/json", ...headers },
       body: JSON.stringify(body),
-      signal: AbortSignal.timeout(TIMEOUT_MS),
+      signal,
     });
   } catch (err) {
+    if (ctx.signal.aborted) throw abortReason(ctx.signal);
     const name = err instanceof Error ? err.name : "";
     throw new ProviderError(provider, name === "TimeoutError" || name === "AbortError" ? "timeout" : "network");
   }
@@ -91,6 +137,7 @@ async function postJson(
   try {
     return await res.json();
   } catch {
+    if (ctx.signal.aborted) throw abortReason(ctx.signal);
     throw new ProviderError(provider, "unreadable");
   }
 }
@@ -145,7 +192,7 @@ interface DeepSeekResponse {
 function deepseek(apiKey: string, model: string, fetchImpl: typeof fetch): Provider {
   return {
     name: "deepseek",
-    complete(system, messages, log = noopLogger) {
+    complete(system, messages, log = noopLogger, ctx = unlimitedContext) {
       const body = {
         model,
         messages: [{ role: "system", content: system }, ...messages],
@@ -161,7 +208,7 @@ function deepseek(apiKey: string, model: string, fetchImpl: typeof fetch): Provi
         async () => {
           const data = (await postJson("deepseek", fetchImpl, "https://api.deepseek.com/chat/completions", {
             Authorization: `Bearer ${apiKey}`,
-          }, body)) as DeepSeekResponse | null;
+          }, body, ctx)) as DeepSeekResponse | null;
           const choice = data?.choices?.[0];
           return {
             text: choice?.message?.content ?? undefined,
@@ -196,7 +243,7 @@ function gemini(apiKey: string, model: string, fetchImpl: typeof fetch): Provide
   const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`;
   return {
     name: "gemini",
-    complete(system, messages, log = noopLogger) {
+    complete(system, messages, log = noopLogger, ctx = unlimitedContext) {
       const body = {
         systemInstruction: { parts: [{ text: system }] },
         contents: messages.map((m) => ({ role: m.role === "assistant" ? "model" : "user", parts: [{ text: m.content }] })),
@@ -210,7 +257,7 @@ function gemini(apiKey: string, model: string, fetchImpl: typeof fetch): Provide
       return completeWithRetry(
         "gemini",
         async () => {
-          const data = (await postJson("gemini", fetchImpl, url, { "x-goog-api-key": apiKey }, body)) as GeminiResponse | null;
+          const data = (await postJson("gemini", fetchImpl, url, { "x-goog-api-key": apiKey }, body, ctx)) as GeminiResponse | null;
           const candidate = data?.candidates?.[0];
           const parts = candidate?.content?.parts;
           const text = parts?.filter((p) => !p.thought && typeof p.text === "string").map((p) => p.text).join("");

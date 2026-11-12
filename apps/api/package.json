@@ -5,15 +5,16 @@
   "license": "UNLICENSED",
   "type": "module",
   "scripts": {
-    "build": "tsc -p tsconfig.json",
-    "dev": "tsc -p tsconfig.json && node dist/index.js",
+    "build": "tsc -p tsconfig.build.json",
+    "dev": "tsc -p tsconfig.build.json && node dist/index.js",
     "start": "node dist/index.js",
     "test": "tsc -p tsconfig.json && node --test dist/ai/*.test.js"
   },
   "dependencies": {
     "@hifrica/db": "workspace:*",
     "@hifrica/shared": "workspace:*",
-    "fastify": "^5.6.1"
+    "fastify": "^5.6.1",
+    "ioredis": "^6.0.0"
   },
   "devDependencies": {
     "@types/node": "^22.18.0",
