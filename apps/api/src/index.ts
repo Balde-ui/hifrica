@@ -1,7 +1,11 @@
 import Fastify from "fastify";
 import { validateSimulatorYaml } from "@hifrica/shared";
+import { aiRoutes } from "./ai/routes.js";
 
-const app = Fastify({ logger: true, bodyLimit: 128 * 1024 });
+// trustProxy : on ne fait confiance qu'au premier saut (Caddy) ; req.ip est alors l'IP du client lue dans X-Forwarded-For.
+const app = Fastify({ logger: true, bodyLimit: 128 * 1024, trustProxy: (_address, hop) => hop === 0 });
+
+app.register(aiRoutes);
 
 app.get("/api/health", async () => ({ status: "ok", service: "api" }));
 

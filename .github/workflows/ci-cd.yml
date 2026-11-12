@@ -17,6 +17,7 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm build
+      - run: pnpm -r test
       - name: Contrôle des licences (article 6)
         run: pnpm licenses:check
 
