@@ -1,0 +1,12 @@
+node_modules/
+dist/
+.env
+.env.*
+!.env.example
+*.pem
+*.log
+.DS_Store
+backups/
+*.sql
+*.sql.gz
+*.tsbuildinfo

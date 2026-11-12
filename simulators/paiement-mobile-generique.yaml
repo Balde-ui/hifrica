@@ -1,0 +1,33 @@
+name: paiement-mobile-generique
+version: 1.0.0
+description: Paiement mobile générique (format neutre, aucune marque réelle reproduite).
+kind: http
+auth: bearer
+endpoints:
+  - id: checkout
+    method: POST
+    path: /v1/checkout
+    response:
+      status: 201
+      body: { id: "{{uuid}}", status: "pending", amount: "{{body.amount}}", currency: "XOF" }
+    phone:
+      screen: confirm-payment
+      text: "Payer {{body.amount}} FCFA à {{body.merchant}} ?"
+    webhook:
+      on: phone.confirm
+      event: checkout.completed
+      body: { status: "succeeded" }
+  - id: status
+    method: GET
+    path: /v1/checkout/{id}
+    response:
+      status: 200
+      body: { id: "{{params.id}}", status: "pending" }
+scenarios:
+  solde-insuffisant:
+    endpoint: checkout
+    match: { body.amount: "> 500000" }
+    response: { status: 402, body: { error: "insufficient_funds" } }
+  timeout:
+    endpoint: checkout
+    delay: 30s

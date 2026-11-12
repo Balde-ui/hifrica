@@ -1,0 +1,14 @@
+{$APP_DOMAIN} {
+	encode gzip
+	handle /api/* {
+		reverse_proxy api:3000
+	}
+	handle {
+		reverse_proxy web:80
+	}
+}
+
+{$SIM_DOMAIN} {
+	encode gzip
+	reverse_proxy engine:4000
+}

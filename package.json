@@ -1,0 +1,19 @@
+{
+  "name": "hifrica",
+  "private": true,
+  "license": "UNLICENSED",
+  "packageManager": "pnpm@10.28.0",
+  "engines": {
+    "node": ">=22"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": ["esbuild"]
+  },
+  "scripts": {
+    "build": "pnpm -r build",
+    "dev:api": "pnpm --filter @hifrica/api dev",
+    "dev:engine": "pnpm --filter @hifrica/engine dev",
+    "dev:web": "pnpm --filter @hifrica/web dev",
+    "licenses:check": "node scripts/check-licenses.mjs"
+  }
+}
