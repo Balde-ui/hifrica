@@ -1,0 +1,36 @@
+{
+  "name": "@hifrica/db",
+  "version": "0.1.0",
+  "private": true,
+  "license": "UNLICENSED",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "db:generate": "tsc -p tsconfig.json && drizzle-kit generate",
+    "db:generate:custom": "tsc -p tsconfig.json && drizzle-kit generate --custom",
+    "db:check": "tsc -p tsconfig.json && drizzle-kit check && node scripts/check-migration-journal.mjs",
+    "db:auth:generate": "tsc -p tsconfig.json && node scripts/auth-schema.mjs generate",
+    "db:auth:drift": "tsc -p tsconfig.json && node scripts/auth-schema.mjs check",
+    "test": "tsc -p tsconfig.json && node --test \"test/unit/*.test.mjs\"",
+    "test:pg": "tsc -p tsconfig.json && node --test --test-concurrency=1 \"test/pg/*.test.mjs\""
+  },
+  "dependencies": {
+    "better-auth": "1.7.22",
+    "drizzle-orm": "0.45.4",
+    "pg": "8.23.1"
+  },
+  "devDependencies": {
+    "@types/node": "^22.20.5",
+    "@types/pg": "8.23.1",
+    "drizzle-kit": "0.31.11",
+    "typescript": "^5.9.3"
+  }
+}
