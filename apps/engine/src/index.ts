@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import Fastify from "fastify";
 import { authenticate, resolveScenario } from "./auth.js";
+import type { HifricaRequestContext } from "./context.js";
 import { publishEvent } from "./events.js";
 import { registerRequestLogging } from "./logs.js";
 import { buildResponse, findEndpoint, paymentPendingEvent } from "./response.js";
@@ -15,6 +16,8 @@ app.addHook("onSend", async (request, reply, payload) => {
   reply.header("X-Hifrica-Request-Id", request.id);
   return payload;
 });
+// Contexte Hifrica de la requête, rempli par la route et lu par les crochets de logs.ts.
+app.decorateRequest("hifrica", null);
 registerRequestLogging(app);
 
 const simulators = loadSimulators(process.env.SIMULATORS_DIR ?? "/simulators", (m) => app.log.info(m));
@@ -25,15 +28,20 @@ app.get("/health", async () => ({ status: "ok", service: "engine", simulators: [
 app.all<{ Params: { simulator: string; "*": string } }>("/:simulator/*", async (req, reply) => {
   const sim = simulators.get(req.params.simulator);
   if (!sim || sim.kind !== "http") return reply.code(404).send({ error: "simulator_not_found" });
+  const hifrica: HifricaRequestContext = { simulator: sim.name, channel: "http" };
+  req.hifrica = hifrica;
 
   const auth = await authenticate(req);
   if (!auth.ok) return reply.code(401).send({ error: "invalid_test_key" });
   const { projectId } = auth;
+  hifrica.projectId = projectId;
+  if (auth.apiKeyId !== undefined) hifrica.apiKeyId = auth.apiKeyId;
 
   const path = "/" + req.params["*"];
   const found = findEndpoint(sim, req.method, path);
   if (!found) return reply.code(404).send({ error: "endpoint_not_found", path });
   const { endpoint, params } = found;
+  hifrica.endpointId = endpoint.id;
 
   const ctx = {
     body: (req.body ?? {}) as Record<string, unknown>,
@@ -41,6 +49,7 @@ app.all<{ Params: { simulator: string; "*": string } }>("/:simulator/*", async (
     params,
   };
   const scenarioKey = await resolveScenario(req, projectId);
+  if (scenarioKey !== undefined) hifrica.scenarioKey = scenarioKey;
   const response = await buildResponse(sim, endpoint, scenarioKey, ctx);
 
   // Effets de bord uniquement sur succès : un 402 (solde insuffisant) ne crée ni session ni webhook.
