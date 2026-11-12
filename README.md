@@ -2,13 +2,14 @@
 
 Plateforme communautaire de simulateurs de paiement mobile, d'USSD et de SMS pour tester les apps africaines, sans compte marchand ni coût. Un assistant IA crée un simulateur à partir d'une simple description. Projet présenté au concours CADEV 2026.
 
-- **Démo** : https://app.5-22-216-30.sslip.io
-- **Simulateurs** : https://sim.5-22-216-30.sslip.io
+- **Démo** : https://app.hifrica.site
+- **Simulateurs** : https://sim.hifrica.site
+
 
 ## Essayer un simulateur
 
 ```bash
-curl -X POST https://sim.5-22-216-30.sslip.io/paiement-mobile-generique/v1/checkout \
+curl -X POST https://sim.hifrica.site/paiement-mobile-generique/v1/checkout \
   -H "Authorization: Bearer sk_test_demo" \
   -H "Content-Type: application/json" \
   -d '{"amount": 5000, "merchant": "Boutique"}'
