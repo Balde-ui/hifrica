@@ -23,13 +23,14 @@ export interface PhoneConfirmEvent extends BaseEvent {
   type: "phone.confirm";
   sessionId: string;
   projectId: string;
-  pin?: string;
 }
 
 export interface PhoneRejectEvent extends BaseEvent {
   type: "phone.reject";
   sessionId: string;
   projectId: string;
+  // "wrong_pin" si le code saisi sur le téléphone simulé était incorrect ; le PIN
+  // lui-même n'est jamais publié dans l'événement, il est vérifié avant (route B1).
   reason?: string;
 }
 
@@ -105,7 +106,8 @@ export function isHifricaEvent(value: unknown): value is HifricaEvent {
   switch (type as HifricaEventType) {
     case "payment.pending":
       return (
-        typeof obj.amount === "number" &&
+        Number.isFinite(obj.amount) &&
+        (obj.amount as number) >= 0 &&
         obj.screen === "confirm-payment" &&
         typeof obj.text === "string"
       );
