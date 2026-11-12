@@ -16,9 +16,9 @@ Chaque contribution produite avec une IA est relue en pull request par un autre 
 
 | Fournisseur | Rôle | Usage | Données envoyées |
 | --- | --- | --- | --- |
-| DeepSeek (API) | Principal | Génération de YAML de simulateur depuis une description ; explication d'erreurs | Description, YAML, journaux masqués (clés, jetons, en-têtes `Authorization`, numéros, emails et noms retirés) |
+| DeepSeek (API) | Principal | Génération de YAML de simulateur depuis une description ; explication d'erreurs | Description et YAML ; emails, numéros de téléphone, clés, jetons, IBAN et numéros de carte masqués avant envoi. Les noms ne sont pas détectés : l'interface demande de ne pas saisir de données personnelles. |
 | Google Gemini Flash (API, offre gratuite) | Secours | Mêmes usages si DeepSeek échoue | Idem |
 
 - Les deux fournisseurs sont appelés directement par l'API REST (fetch), sans SDK.
-- Les conditions d'utilisation des deux fournisseurs ont été lues ; aucune donnée personnelle ne leur est envoyée.
+- Les conditions d'utilisation des deux fournisseurs ont été lues ; les données personnelles détectables sont masquées avant envoi.
 - Tout YAML généré est validé par le JSON Schema partagé (`packages/shared`) et relu par l'utilisateur avant publication ; il est marqué « Généré par IA, à vérifier ».
