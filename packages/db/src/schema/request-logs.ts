@@ -51,6 +51,9 @@ export const requestLogs = pgTable(
     outcome: text("outcome", { enum: REQUEST_OUTCOMES }).notNull(),
     endpointId: text("endpoint_id"),
     scenarioKey: text("scenario_key"),
+    // D14 : identifiant commun aux lignes d'une même session (USSD, paiement), égal au sessionId des
+    // événements temps réel. NULL pour un SMS isolé ou une requête HTTP sans session.
+    sessionId: text("session_id"),
     method: text("method").notNull(),
     path: text("path").notNull(),
     status: smallint("status"),
@@ -68,6 +71,8 @@ export const requestLogs = pgTable(
     uniqueIndex("request_logs_request_id_uidx").on(t.requestId),
     index("request_logs_project_id_id_idx").on(t.projectId, t.id.desc()),
     index("request_logs_created_at_idx").on(t.createdAt),
+    // D14 : retrouver les lignes d'une session dans un projet (console : affichage et rejeu d'une session USSD).
+    index("request_logs_project_session_idx").on(t.projectId, t.sessionId),
     check("request_logs_channel_chk", sql`${t.channel} IN ('http', 'ussd', 'sms')`),
     check("request_logs_source_chk", sql`${t.source} IN ('api', 'replay', 'editor', 'phone')`),
     check("request_logs_outcome_chk", sql`${t.outcome} IN ('responded', 'client_aborted', 'response_failed', 'timeout')`),

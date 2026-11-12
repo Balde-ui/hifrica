@@ -1,9 +1,19 @@
 import { after, before, describe, test } from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { cpSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { randomBytes, randomUUID } from "node:crypto";
 import pg from "pg";
-import { MIGRATIONS_FOLDER, MIGRATION_LOCK_KEY, createPool, runMigrations } from "../../dist/index.js";
+import {
+  MIGRATIONS_FOLDER,
+  MIGRATION_LOCK_KEY,
+  createPool,
+  encryptWebhookSecret,
+  generateWebhookSecret,
+  parseWebhookSecretKeyring,
+  runMigrations,
+} from "../../dist/index.js";
 import { EXPECTED_TABLES, SKIP_REASON, appliedMigrations, createFreshDatabase, publicTables, withClient } from "./helpers.mjs";
 
 const journal = JSON.parse(readFileSync(join(MIGRATIONS_FOLDER, "meta", "_journal.json"), "utf8"));
@@ -98,6 +108,66 @@ describe("migrations sur une base PostgreSQL vierge", { skip: SKIP_REASON }, () 
       assert.equal(rows[0].TimeZone, "UTC");
     } finally {
       await pool.end();
+      await db.drop();
+    }
+  });
+  test("base déjà migrée jusqu'à 0001 (avec données) : seule 0002 est appliquée, données conservées", async () => {
+    const db = await createFreshDatabase();
+    const partial = mkdtempSync(join(tmpdir(), "hifrica-migrations-0001-"));
+    try {
+      // Copie du dossier de migrations, journal tronqué aux deux premières entrées (0000, 0001).
+      cpSync(MIGRATIONS_FOLDER, partial, { recursive: true });
+      const partialJournal = { ...journal, entries: journal.entries.slice(0, 2) };
+      assert.deepEqual(partialJournal.entries.map((e) => e.tag), ["0000_init", "0001_users_role_check"]);
+      writeFileSync(join(partial, "meta", "_journal.json"), JSON.stringify(partialJournal));
+      await runMigrations({ databaseUrl: db.url, migrationsFolder: partial });
+
+      const keyring = parseWebhookSecretKeyring(`v1:${randomBytes(32).toString("base64")}`);
+      const projectId = randomUUID();
+      const requestId = randomUUID();
+      await withClient(db.url, async (c) => {
+        assert.equal((await appliedMigrations(c)).length, 2);
+        const { rows: cols } = await c.query(
+          "SELECT 1 FROM information_schema.columns WHERE table_name = 'request_logs' AND column_name = 'session_id'",
+        );
+        assert.equal(cols.length, 0, "session_id absente avant 0002");
+        const { rows: u } = await c.query(
+          "INSERT INTO users (name, email, updated_at) VALUES ('M', $1, now()) RETURNING id",
+          [`mig-${randomUUID()}@example.test`],
+        );
+        await c.query("INSERT INTO projects (id, owner_id, name, webhook_secret_enc) VALUES ($1, $2, 'P', $3)", [
+          projectId,
+          u[0].id,
+          encryptWebhookSecret(generateWebhookSecret(), projectId, keyring),
+        ]);
+        await c.query(
+          `INSERT INTO request_logs (request_id, project_id, simulator_slug, outcome, method, path, status, duration_ms, request, response)
+           VALUES ($1, $2, 'paiement-mobile-generique', 'responded', 'POST', '/v1/checkout', 201, 3, '{}', '{}')`,
+          [requestId, projectId],
+        );
+      });
+
+      await runMigrations({ databaseUrl: db.url });
+
+      await withClient(db.url, async (c) => {
+        assert.equal((await appliedMigrations(c)).length, MIGRATION_COUNT, "0002 appliquée une seule fois");
+        const { rows: col } = await c.query(
+          "SELECT data_type, is_nullable FROM information_schema.columns WHERE table_name = 'request_logs' AND column_name = 'session_id'",
+        );
+        assert.deepEqual(col[0], { data_type: "text", is_nullable: "YES" });
+        const { rows: kept } = await c.query("SELECT session_id, simulator_slug FROM request_logs WHERE request_id = $1", [requestId]);
+        assert.equal(kept.length, 1, "la ligne existante est conservée");
+        assert.equal(kept[0].session_id, null);
+        const { rows: idx } = await c.query(
+          "SELECT 1 FROM pg_indexes WHERE tablename = 'request_logs' AND indexname = 'request_logs_project_session_idx'",
+        );
+        assert.equal(idx.length, 1);
+      });
+
+      await runMigrations({ databaseUrl: db.url });
+      await withClient(db.url, async (c) => assert.equal((await appliedMigrations(c)).length, MIGRATION_COUNT, "redémarrage sans effet"));
+    } finally {
+      rmSync(partial, { recursive: true, force: true });
       await db.drop();
     }
   });

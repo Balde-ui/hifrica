@@ -11,7 +11,7 @@ Les contrats partagés avec A et B (et leur état de validation) sont dans [`C0_
 packages/db/
 ├── auth.cli.mjs              # config Better Auth réservée au CLI de génération (sans base, sans secret)
 ├── drizzle.config.ts         # drizzle-kit lit le schéma COMPILÉ (dist/schema/index.js)
-├── migrations/               # SQL versionné : 0000_init (généré), 0001_users_role_check (--custom)
+├── migrations/               # SQL versionné : 0000_init (généré), 0001_users_role_check (--custom), 0002_request_logs_session_id (généré, D14)
 ├── scripts/
 │   ├── auth-schema.mjs       # generate | check : schéma Better Auth reproductible + contrôle de dérive
 │   └── check-migration-journal.mjs  # ordre strict des migrations, fichiers orphelins, migrations fusionnées intactes

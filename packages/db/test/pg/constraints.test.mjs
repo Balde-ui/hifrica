@@ -221,4 +221,58 @@ describe("contraintes et relations", { skip: SKIP_REASON }, () => {
     assert.equal(kept[0].simulator_version_id, null);
     assert.equal(kept[0].simulator_slug, "paiement-mobile-generique");
   });
+
+  test("request_logs.session_id (D14) : NULL accepté, session valide enregistrée", async () => {
+    const user = await insertUser();
+    const projectId = await insertProject(user.id);
+    const { rows: withoutSession } = await insertLog(logRow(projectId));
+    const { rows: plain } = await q("SELECT session_id FROM request_logs WHERE id = $1", [withoutSession[0].id]);
+    assert.equal(plain[0].session_id, null, "NULL pour une requête HTTP sans session");
+    const sessionId = randomUUID();
+    const { rows: ussd } = await insertLog(
+      logRow(projectId, { channel: "ussd", method: "USSD", path: "*123#", status: null, session_id: sessionId }),
+    );
+    const { rows: stored } = await q("SELECT session_id FROM request_logs WHERE id = $1", [ussd[0].id]);
+    assert.equal(stored[0].session_id, sessionId);
+  });
+
+  test("request_logs.session_id (D14) : recherche par (project_id, session_id), sans fuite entre projets", async () => {
+    const user = await insertUser();
+    const projectA = await insertProject(user.id);
+    const projectB = await insertProject(user.id);
+    const session = `ussd-${randomUUID()}`;
+    for (let i = 0; i < 3; i++) {
+      await insertLog(logRow(projectA, { channel: "ussd", method: "USSD", path: "*123#", status: null, session_id: session }));
+    }
+    await insertLog(logRow(projectA, { channel: "ussd", method: "USSD", path: "*123#", status: null, session_id: `autre-${randomUUID()}` }));
+    await insertLog(logRow(projectB, { channel: "ussd", method: "USSD", path: "*123#", status: null, session_id: session }));
+    await insertLog(logRow(projectA));
+    const { rows } = await q(
+      "SELECT id, project_id FROM request_logs WHERE project_id = $1 AND session_id = $2 ORDER BY id",
+      [projectA, session],
+    );
+    assert.equal(rows.length, 3, "les 3 échanges de la session, et seulement eux");
+    assert.ok(rows.every((r) => r.project_id === projectA));
+    const ids = rows.map((r) => BigInt(r.id));
+    assert.ok(ids[0] < ids[1] && ids[1] < ids[2], "ordre des échanges conservé par id croissant");
+  });
+
+  test("request_logs.session_id (D14) : index composite (project_id, session_id) présent et utilisable", async () => {
+    const { rows: idx } = await q(
+      "SELECT indexdef FROM pg_indexes WHERE schemaname = 'public' AND tablename = 'request_logs' AND indexname = 'request_logs_project_session_idx'",
+    );
+    assert.equal(idx.length, 1, "index présent");
+    assert.match(idx[0].indexdef, /USING btree \(project_id, session_id\)$/);
+    await q("BEGIN");
+    try {
+      await q("SET LOCAL enable_seqscan = off");
+      const { rows: plan } = await q(
+        "EXPLAIN SELECT id FROM request_logs WHERE project_id = $1 AND session_id = $2",
+        [randomUUID(), "s"],
+      );
+      assert.ok(plan.some((r) => r["QUERY PLAN"].includes("request_logs_project_session_idx")), "le planificateur peut utiliser l'index");
+    } finally {
+      await q("ROLLBACK");
+    }
+  });
 });
