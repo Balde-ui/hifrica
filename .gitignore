@@ -9,4 +9,6 @@ dist/
 backups/
 *.sql
 *.sql.gz
+# Exception : les migrations versionnées DOIVENT être commitées (sinon migrate() échoue en production).
+!packages/db/migrations/*.sql
 *.tsbuildinfo
