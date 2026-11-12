@@ -11,4 +11,4 @@ backups/
 *.sql.gz
 *.tsbuildinfo
 
-docs/
+notes/

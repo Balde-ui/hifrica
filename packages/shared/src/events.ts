@@ -95,10 +95,12 @@ export function isHifricaEvent(value: unknown): value is HifricaEvent {
   if (!value || typeof value !== "object") return false;
   const obj = value as Record<string, unknown>;
   const type = obj.type;
-  if (typeof type !== "string" || !(type in REQUIRED_FIELDS)) return false;
+  if (typeof type !== "string" || !Object.hasOwn(REQUIRED_FIELDS, type)) return false;
 
   const required = REQUIRED_FIELDS[type as HifricaEventType];
-  if (!required.every((field) => obj[field] !== undefined)) return false;
+  if (!required.every((field) => obj[field] !== undefined && obj[field] !== null)) return false;
+  if (typeof obj.projectId !== "string" || typeof obj.createdAt !== "string") return false;
+  if (obj.sessionId !== undefined && typeof obj.sessionId !== "string") return false;
 
   switch (type as HifricaEventType) {
     case "payment.pending":
