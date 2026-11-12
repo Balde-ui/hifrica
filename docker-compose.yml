@@ -9,6 +9,7 @@ services:
     environment:
       APP_DOMAIN: ${APP_DOMAIN}
       SIM_DOMAIN: ${SIM_DOMAIN}
+      ROOT_DOMAIN: ${ROOT_DOMAIN}
     volumes:
       - ./infra/Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy_data:/data
