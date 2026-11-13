@@ -12,6 +12,11 @@ Déclaration exigée par l'article 6 du règlement CADEV 2026 : outils utilisés
 | Claude Code | Alhassane | A2 : webhooks signés (file BullMQ, HMAC, relances, protection SSRF) | Alhassane, relu en PR par B ou C |
 | Claude Code | Alhassane | A3 + A4 : session de paiement et webhook sur confirmation | Alhassane, relu en PR par B et C |
 | Claude Code | Alhassane | A5 : webhooks par projet et historique des envois | Alhassane, relu en PR par B et C |
+| Claude Code | Iza | B0 : types d'événements temps réel partagés (`packages/shared`) | Iza, relu en PR par A |
+| Claude Code | Iza | B1 : route SSE (`/api/projects/:id/stream`) et route de confirmation téléphone | Iza, relu en PR par A et C |
+| Claude Code | Iza | B2 : écran du téléphone simulé (interface) | Iza, relu en PR par A |
+| Claude Code | Iza | B3 : moteur USSD (menus, sessions Valkey, saisies sensibles) | Iza, relu en PR par A et C |
+| Claude Code | Iza | B4 : notification SMS depuis un simulateur HTTP (`screen: sms`) | Iza, relu en PR par A |
 | _à compléter_ | | | |
 
 Chaque contribution produite avec une IA est relue en pull request par un autre membre avant fusion, et les trois membres savent l'expliquer.
