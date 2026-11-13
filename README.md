@@ -168,7 +168,7 @@ La page **Éditeur** valide le YAML pendant la frappe et place chaque erreur sur
 
 Dans l'éditeur, **✨ Générer avec l'IA** transforme une description en français en simulateur YAML. Le résultat est validé par le même schéma, corrigé automatiquement jusqu'à deux fois, puis marqué **« Généré par IA, à vérifier »** : relisez chaque endpoint et chaque scénario avant de publier.
 
-L'assistant est désactivé tant que le serveur n'a pas `AI_GENERATION_ENABLED=true`. Les fournisseurs (DeepSeek, Gemini en secours), les données envoyées et les limites du masquage sont décrits dans [`AI_USAGE.md`](AI_USAGE.md).
+L'assistant est réservé aux utilisateurs connectés (sans session : `401 auth_required`), avec un quota par compte de 20 générations par jour UTC (`AI_USER_DAILY_LIMIT`). Il est désactivé tant que le serveur n'a pas `AI_GENERATION_ENABLED=true`. Les fournisseurs (DeepSeek, Gemini en secours), les données envoyées et les limites du masquage sont décrits dans [`AI_USAGE.md`](AI_USAGE.md).
 
 ---
 
@@ -304,7 +304,7 @@ curl -i -X POST localhost:4000/paiement-mobile-generique/v1/checkout \
    | --- | --- |
    | API | `DATABASE_URL`, `VALKEY_URL`, `BETTER_AUTH_SECRET`, `BETTER_AUTH_URL` (adresse de l'interface, `http://localhost:5173`), `WEBHOOK_SECRET_KEYS` (création de projets), `ENGINE_INTERNAL_URL=http://localhost:4000` (envoi de requêtes depuis la console) |
    | Moteur | `DATABASE_URL`, `VALKEY_URL`, `SIMULATORS_DIR`, `WEBHOOK_SECRET_KEYS` (la même que l'API : déchiffre le secret de chaque projet) |
-   | Assistant IA (facultatif) | `AI_GENERATION_ENABLED=true` et `DEEPSEEK_API_KEY` ou `GEMINI_API_KEY` |
+   | Assistant IA (facultatif) | `AI_GENERATION_ENABLED=true` et `DEEPSEEK_API_KEY` ou `GEMINI_API_KEY` ; `AI_USER_DAILY_LIMIT` (20 par compte et par jour) et `AI_DAILY_LIMIT` (100 par jour) |
    | Webhooks vers `localhost` (facultatif) | `WEBHOOK_ALLOW_PRIVATE=true` et `NODE_ENV=development` sur le moteur ; l'URL se règle dans l'onglet **Paramètres** du projet |
 
 3. Lancez les trois services, chacun dans son terminal :
@@ -327,7 +327,7 @@ Le moteur seul, sans base, utilise deux bouchons à la place de l'URL et du secr
 - **Secrets de webhook** : un par projet, chiffré en AES-256-GCM. Les clés de chiffrement restent hors de la base (`WEBHOOK_SECRET_KEYS`).
 - **Protection SSRF des webhooks** : `http` et `https` seulement. Les adresses privées ou réservées (IPv4 et IPv6) sont refusées au moment de la connexion, ce qui protège aussi d'un changement d'adresse DNS. Aucune redirection n'est suivie, et chaque tentative dure 5 s au plus.
 - **Journal des requêtes** : métadonnées seulement. Ni corps, ni en-tête `Authorization`, ni query ne sont enregistrés.
-- **Assistant IA** : désactivé par défaut (`AI_GENERATION_ENABLED`). Limité à 10 générations par heure et par client (adresse IPv4, ou bloc /64 en IPv6), avec un plafond global par jour (`AI_DAILY_LIMIT`, 100 par défaut). Les emails, numéros, clés, IBAN, numéros de carte et codes sont masqués avant l'envoi au fournisseur. Ce masquage est partiel : ses limites sont listées dans [`AI_USAGE.md`](AI_USAGE.md).
+- **Assistant IA** : réservé aux comptes connectés, désactivé par défaut (`AI_GENERATION_ENABLED`). Limité à 20 générations par jour et par compte (`AI_USER_DAILY_LIMIT`), 10 par heure et par client (adresse IPv4, ou bloc /64 en IPv6), avec un plafond global par jour (`AI_DAILY_LIMIT`, 100 par défaut). Les emails, numéros, clés, IBAN, numéros de carte et codes sont masqués avant l'envoi au fournisseur. Ce masquage est partiel : ses limites sont listées dans [`AI_USAGE.md`](AI_USAGE.md).
 
 ---
 

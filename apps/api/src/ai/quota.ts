@@ -1,8 +1,8 @@
 // Propriétaire : Dev A
-// Limites d'usage de l'assistant IA : 10 générations par heure et par client, plafond global par jour (UTC).
+// Limites d'usage de l'assistant IA, dans cet ordre : quota par compte et par jour (UTC), 10 générations
+// par heure et par client (IP), plafond global par jour (UTC).
 // Compteurs dans Valkey (INCR + EXPIRE) : un redémarrage ou un déploiement ne les remet pas à zéro.
 // Si Valkey est injoignable, repli en mémoire (avertissement dans les logs, jamais de crash).
-// TODO(C2) : quota par compte en base quand l'auth existe.
 import { isIP } from "node:net";
 import type { FastifyBaseLogger } from "fastify";
 import { Redis } from "ioredis";
@@ -10,6 +10,7 @@ import { Redis } from "ioredis";
 export const PER_CLIENT_LIMIT = 10;
 export const PER_CLIENT_WINDOW_SEC = 3600;
 export const DEFAULT_DAILY_LIMIT = 100;
+export const DEFAULT_USER_DAILY_LIMIT = 20;
 const KEY_PREFIX = "hifrica:ai:quota";
 
 type QuotaLogger = Pick<FastifyBaseLogger, "warn">;
@@ -189,13 +190,15 @@ export class FallbackStore implements CounterStore {
 
 export type QuotaResult =
   | { ok: true }
-  | { ok: false; error: "quota_exceeded" | "daily_limit_reached"; retryAfter: number };
+  | { ok: false; error: "user_quota_exceeded" | "quota_exceeded" | "daily_limit_reached"; retryAfter: number };
 
 export interface AiQuotaOptions {
   store: CounterStore;
   perClientLimit?: number;
   windowSec?: number;
   dailyLimit?: number;
+  /** Générations par compte et par jour UTC. */
+  userDailyLimit?: number;
   now?: () => number;
 }
 
@@ -203,6 +206,7 @@ export class AiQuota {
   readonly perClientLimit: number;
   readonly windowSec: number;
   readonly dailyLimit: number;
+  readonly userDailyLimit: number;
   private readonly store: CounterStore;
   private readonly now: () => number;
 
@@ -211,19 +215,28 @@ export class AiQuota {
     this.perClientLimit = opts.perClientLimit ?? PER_CLIENT_LIMIT;
     this.windowSec = opts.windowSec ?? PER_CLIENT_WINDOW_SEC;
     this.dailyLimit = opts.dailyLimit ?? DEFAULT_DAILY_LIMIT;
+    this.userDailyLimit = opts.userDailyLimit ?? DEFAULT_USER_DAILY_LIMIT;
     this.now = opts.now ?? Date.now;
   }
 
-  /** Consomme une génération : quota du client d'abord, puis plafond global du jour (UTC). */
-  async consume(ip: string): Promise<QuotaResult> {
-    const client = await this.store.incr(`${KEY_PREFIX}:client:${clientKey(ip)}`, this.windowSec);
-    if (client.count > this.perClientLimit) return { ok: false, error: "quota_exceeded", retryAfter: client.ttlSec };
-
+  /**
+   * Consomme une génération : quota du compte (par jour UTC), puis quota du client (IP, par heure),
+   * puis plafond global du jour (UTC). Le premier refus arrête le contrôle.
+   */
+  async consume(ip: string, userId: string): Promise<QuotaResult> {
     const now = new Date(this.now());
     const day = now.toISOString().slice(0, 10);
     const untilMidnight = Math.ceil((Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + 1) - now.getTime()) / 1000);
-    // La clé du jour expire un peu après minuit UTC (marge de 1 h), son nom changeant de toute façon.
-    const daily = await this.store.incr(`${KEY_PREFIX}:daily:${day}`, untilMidnight + 3600);
+    // Les clés du jour expirent un peu après minuit UTC (marge de 1 h), leur nom changeant de toute façon.
+    const dayTtl = untilMidnight + 3600;
+
+    const user = await this.store.incr(`${KEY_PREFIX}:user:${userId}:${day}`, dayTtl);
+    if (user.count > this.userDailyLimit) return { ok: false, error: "user_quota_exceeded", retryAfter: Math.max(1, untilMidnight) };
+
+    const client = await this.store.incr(`${KEY_PREFIX}:client:${clientKey(ip)}`, this.windowSec);
+    if (client.count > this.perClientLimit) return { ok: false, error: "quota_exceeded", retryAfter: client.ttlSec };
+
+    const daily = await this.store.incr(`${KEY_PREFIX}:daily:${day}`, dayTtl);
     if (daily.count > this.dailyLimit) return { ok: false, error: "daily_limit_reached", retryAfter: Math.max(1, untilMidnight) };
     return { ok: true };
   }
@@ -234,13 +247,19 @@ export class AiQuota {
 }
 
 /** Quotas à partir de l'environnement : Valkey si VALKEY_URL (avec repli mémoire), sinon mémoire seule. */
+/** Entier positif ou nul lu dans l'environnement, sinon la valeur par défaut. */
+function limitFromEnv(value: string | undefined, fallback: number): number {
+  const parsed = Number(value);
+  return value && Number.isInteger(parsed) && parsed >= 0 ? parsed : fallback;
+}
+
 export function createQuotaFromEnv(env: Record<string, string | undefined>, log: QuotaLogger): AiQuota {
-  const parsed = Number(env.AI_DAILY_LIMIT);
-  const dailyLimit = env.AI_DAILY_LIMIT && Number.isInteger(parsed) && parsed >= 0 ? parsed : DEFAULT_DAILY_LIMIT;
+  const dailyLimit = limitFromEnv(env.AI_DAILY_LIMIT, DEFAULT_DAILY_LIMIT);
+  const userDailyLimit = limitFromEnv(env.AI_USER_DAILY_LIMIT, DEFAULT_USER_DAILY_LIMIT);
   const memory = new MemoryStore();
   if (!env.VALKEY_URL) {
     log.warn("VALKEY_URL absente : quotas de l'assistant IA en mémoire (remis à zéro au redémarrage)");
-    return new AiQuota({ store: memory, dailyLimit });
+    return new AiQuota({ store: memory, dailyLimit, userDailyLimit });
   }
-  return new AiQuota({ store: new FallbackStore(new ValkeyStore(env.VALKEY_URL, log), memory, log), dailyLimit });
+  return new AiQuota({ store: new FallbackStore(new ValkeyStore(env.VALKEY_URL, log), memory, log), dailyLimit, userDailyLimit });
 }
