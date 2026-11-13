@@ -58,21 +58,41 @@ const RULES: MaskRule[] = [
   { label: "[CLE]", pattern: /\b(Bearer)\s+[A-Za-z0-9._~+/=-]{6,}/gi, replace: (_m, [word]) => `${word} [CLE]` },
   // Clés sk_..., pk_..., rk_..., whsec_...
   { label: "[CLE]", pattern: /\b(?:sk|pk|rk|whsec)_[A-Za-z0-9_+/=-]{4,}/g },
-  // Valeur après « PIN », « code », « mot de passe », « password », « mdp » → [SECRET].
+  // Clés sk-... (DeepSeek, OpenAI...) et jetons GitHub ghp_..., github_pat_...
+  { label: "[CLE]", pattern: /\b(?:sk-|ghp_|github_pat_)[A-Za-z0-9_-]{8,}/g },
+  // Valeur après « PIN », « OTP », « code », « code secret », « code confidentiel », « passcode »,
+  // « mot de passe », « password », « mdp », « CVV », « CVC » → [SECRET].
   // La valeur va jusqu'au prochain espace, virgule ou point-virgule : mieux vaut masquer une ponctuation
   // de trop que laisser fuir la fin d'un mot de passe (« Soleil2026! »).
   {
     label: "[SECRET]",
     // La valeur ne peut pas être elle-même un mot-clé : dans « Code PIN : 0000 », c'est « PIN : 0000 » qui compte.
     pattern:
-      /(?<![\p{L}\p{N}_])(PIN|code|mot de passe|password|mdp)(?![\p{L}\p{N}_])(\s*(?:[:=]|est|is)?\s*)(?!(?:PIN|code|mot|password|mdp)(?![\p{L}\p{N}_]))([^\s,;]+)/giu,
+      /(?<![\p{L}\p{N}_])(code secret|code confidentiel|mot de passe|passcode|password|PIN|OTP|CVV|CVC|code|mdp)(?![\p{L}\p{N}_])(\s*(?:[:=]|est|is)?\s*)(?!(?:PIN|OTP|CVV|CVC|code|mot|passcode|password|mdp)(?![\p{L}\p{N}_]))([^\s,;]+)/giu,
     accept: (_m, [keyword, separator, value]) => isSecretValue(keyword, separator, value),
     replace: (_m, [keyword, separator]) => `${keyword}${separator}[SECRET]`,
   },
-  // IBAN (groupes de 4, avec ou sans espaces)
+  // Dans un code USSD (*144*4*1234#) : un segment de 4 à 6 chiffres qui suit « PIN » ou qui est le dernier
+  // avant # est masqué (*144*4*[SECRET]#). Le code de service (premier segment) n'est jamais touché.
+  // Placé APRÈS la règle des secrets, qui laisse intacts les codes USSD (« code *144*4*1234# »).
+  {
+    label: "[SECRET]",
+    pattern: /\*(\d{1,6})((?:\*[\p{L}\d]+)+)#/gu,
+    replace: (_m, [service, rest]) => {
+      const segments = rest.slice(1).split("*");
+      const masked = segments.map((seg, i) => {
+        const isPinValue = i > 0 && /^pin$/i.test(segments[i - 1]);
+        return /^\d{4,6}$/.test(seg) && (isPinValue || i === segments.length - 1) ? "[SECRET]" : seg;
+      });
+      return `*${service}*${masked.join("*")}#`;
+    },
+  },
+  // IBAN (groupes de 4, avec ou sans espaces, majuscules ou minuscules). Un groupe en minuscules doit
+  // contenir un chiffre (sn01), pour ne pas avaler le mot qui suit l'IBAN (« ... 3035 pour »).
   {
     label: "[IBAN]",
-    pattern: /\b[A-Z]{2}\d{2}(?: ?[A-Z0-9]{4}){2,7}(?: ?[A-Z0-9]{1,4})?\b/g,
+    pattern:
+      /\b[A-Za-z]{2}\d{2}(?: ?(?:(?=[A-Za-z]{0,3}\d)[A-Za-z0-9]{4}|[A-Z]{4})){2,7}(?: ?(?:(?=[A-Za-z]{0,3}\d)[A-Za-z0-9]{1,4}|[A-Z]{1,4}))?\b/g,
     accept: (m) => m.replace(/\s/g, "").length >= 15 && /\d{4}/.test(m.slice(4)),
   },
   // Téléphones internationaux : +221 77 123 45 67, 00221771234567, +33 6 12 34 56 78, +1 (555) 123-4567
@@ -129,6 +149,8 @@ function fromLetters(s: string): number {
 /**
  * Remplace emails, téléphones, clés et jetons, IBAN, numéros de carte et secrets par [EMAIL], [TEL],
  * [CLE], [IBAN], [CARTE], [SECRET]. Les montants suivis d'une devise CFA ne sont jamais masqués.
+ * Limites connues (voir les tests « limites connues » et AI_USAGE.md) : noms, dates de naissance,
+ * adresses, secrets écrits sans mot-clé, etc. ne sont pas détectés.
  */
 export function maskSensitive(text: string): string {
   const amounts: string[] = [];

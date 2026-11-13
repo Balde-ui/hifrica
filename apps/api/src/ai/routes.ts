@@ -3,7 +3,8 @@
 // Logs : provider, attempts, durée, statut uniquement. JAMAIS la description, le YAML ni les clés.
 //
 // Variables d'environnement :
-//   AI_GENERATION_ENABLED   "false" coupe l'assistant (503 ai_disabled, aucun appel IA) ; défaut "true"
+//   AI_GENERATION_ENABLED   activé seulement si "true", "1" ou "yes" (casse et espaces ignorés) ; absente ou
+//                           toute autre valeur = désactivé (503 ai_disabled, aucun appel IA)
 //   AI_DAILY_LIMIT          plafond global de générations par jour UTC ; défaut 100
 //   AI_REQUEST_DEADLINE_MS  échéance globale d'une requête ; défaut 90000 (504 ai_timeout au-delà)
 //   VALKEY_URL              compteurs de quota persistants (sinon en mémoire)
@@ -24,6 +25,11 @@ export interface AiRoutesOptions {
 }
 
 export const DEFAULT_DEADLINE_MS = 90_000;
+
+/** L'assistant est désactivé par défaut : seules "true", "1" et "yes" l'activent (casse et espaces ignorés). */
+export function isGenerationEnabled(value: string | undefined): boolean {
+  return ["true", "1", "yes"].includes((value ?? "").trim().toLowerCase());
+}
 const MIN_DESCRIPTION = 10;
 const MAX_DESCRIPTION = 2000;
 const NOTICE = "Généré par IA, à vérifier";
@@ -46,7 +52,8 @@ function parseBody(body: unknown): ParsedBody {
 
 export const aiRoutes: FastifyPluginAsync<AiRoutesOptions> = async (app, opts) => {
   const env = opts.env ?? process.env;
-  const enabled = env.AI_GENERATION_ENABLED !== "false";
+  const enabled = isGenerationEnabled(env.AI_GENERATION_ENABLED);
+  app.log.info(enabled ? "Assistant IA : activé" : "Assistant IA : désactivé (AI_GENERATION_ENABLED)");
   const deadlineValue = Number(env.AI_REQUEST_DEADLINE_MS);
   const deadlineMs = Number.isFinite(deadlineValue) && deadlineValue > 0 ? deadlineValue : DEFAULT_DEADLINE_MS;
   const providers = createProviders(env, opts.fetch ?? fetch);
@@ -67,7 +74,7 @@ export const aiRoutes: FastifyPluginAsync<AiRoutesOptions> = async (app, opts) =
     if (!body.ok) return reply.code(400).send({ error: "invalid_body", message: body.message });
 
     if (!enabled) {
-      req.log.info({ status: 503 }, "génération IA désactivée (AI_GENERATION_ENABLED=false)");
+      req.log.info({ status: 503 }, "génération IA désactivée (AI_GENERATION_ENABLED)");
       return reply.code(503).send({ error: "ai_disabled" });
     }
     if (providers.length === 0) {

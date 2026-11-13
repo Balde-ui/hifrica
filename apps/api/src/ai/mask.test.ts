@@ -37,6 +37,8 @@ describe("maskSensitive", () => {
   it("masque les IBAN, avec ou sans espaces", () => {
     assert.equal(maskSensitive("IBAN SN08 SN01 0015 2000 0485 0000 3035 svp"), "IBAN [IBAN] svp");
     assert.equal(maskSensitive("IBAN FR7630006000011234567890189 svp"), "IBAN [IBAN] svp");
+    assert.equal(maskSensitive("iban sn08 sn01 0015 2000 0485 0000 3035"), "iban [IBAN]", "en minuscules");
+    assert.equal(maskSensitive("iban sn08 sn01 0015 2000 0485 0000 3035 pour test"), "iban [IBAN] pour test");
   });
 
   it("masque les numéros de carte valides (Luhn)", () => {
@@ -109,6 +111,56 @@ describe("maskSensitive", () => {
 
   it("ne prend pas une date pour un numéro de téléphone", () => {
     assert.equal(maskSensitive("le 12-03-2026 ou le 2026.03.12"), "le 12-03-2026 ou le 2026.03.12");
+  });
+
+  it("masque la valeur qui suit OTP, passcode, code secret, code confidentiel, CVV, CVC", () => {
+    assert.equal(maskSensitive("le code OTP 482913 expire"), "le code OTP [SECRET] expire");
+    assert.equal(maskSensitive("OTP: 123456"), "OTP: [SECRET]");
+    assert.equal(maskSensitive("passcode=9911"), "passcode=[SECRET]");
+    assert.equal(maskSensitive("code secret 4321"), "code secret [SECRET]");
+    assert.equal(maskSensitive("code confidentiel : 8765"), "code confidentiel : [SECRET]");
+    assert.equal(maskSensitive("CVV 123 et cvc: 456"), "CVV [SECRET] et cvc: [SECRET]");
+    // Après CVV, un nombre de 3 chiffres est bien masqué (l'exception « code 402 » ne vaut que pour « code »).
+    assert.equal(maskSensitive("CVV 402"), "CVV [SECRET]");
+  });
+
+  it("masque les clés sk-, ghp_ et github_pat_", () => {
+    assert.equal(maskSensitive("clé sk-0a1b2c3d4e5f6a7b8c9d0e1f"), "clé [CLE]");
+    assert.equal(maskSensitive("jeton ghp_16C7e42F292c6912E7710c838347Ae178B4a"), "jeton [CLE]");
+    assert.equal(
+      maskSensitive("jeton github_pat_11ABCDEFG0123456789_abcdefghijklmnopqrstuvwxyz"),
+      "jeton [CLE]",
+    );
+    // Pas de faux positif sur des mots ordinaires.
+    assert.equal(maskSensitive("un desk-top, le task-runner, sk-8"), "un desk-top, le task-runner, sk-8");
+  });
+
+  it("USSD : masque le segment de 4 à 6 chiffres final ou qui suit PIN, jamais le code de service", () => {
+    assert.equal(maskSensitive("composer *144*4*1234#"), "composer *144*4*[SECRET]#");
+    assert.equal(maskSensitive("*144*1*2*987654#"), "*144*1*2*[SECRET]#");
+    assert.equal(maskSensitive("*144*PIN*4455*2#"), "*144*PIN*[SECRET]*2#");
+    assert.equal(maskSensitive("code *144*4*1234#"), "code *144*4*[SECRET]#", "le mot « code » ne masque pas tout le code USSD");
+    for (const text of ["*144#", "*1441#", "*144*1#", "*144*12#", "*144*123#", "*144*1234567#", "*144*1234*2#"]) {
+      assert.equal(maskSensitive(text), text, text);
+    }
+  });
+
+  // Ce que le masquage NE détecte PAS : comportement constaté, repris dans AI_USAGE.md.
+  it("limites connues : données laissées en clair ou faux positifs", () => {
+    for (const text of [
+      "le client Awa Diop", // noms de personnes
+      "née le 12/03/1990", // dates de naissance
+      "habite rue 10 x 13, Dakar", // adresses postales
+      "valider avec 1234", // PIN sans mot-clé ni format USSD
+      "le secret est soleil", // mot de passe sans mot-clé reconnu
+      "mot de passe soleil", // valeur sans chiffre, écrite sans « : » ni « = » après le mot-clé
+      "code 123", // PIN de 3 chiffres après « code » : confondu avec un code HTTP
+      "Mali 76123456", // numéro de 8 chiffres sans séparateur ni 0 initial
+    ]) {
+      assert.equal(maskSensitive(text), text, text);
+    }
+    // Faux positif : un nombre groupé sans devise est pris pour un téléphone.
+    assert.equal(maskSensitive("10 500 000 transactions"), "[TEL] transactions");
   });
 
   it("masque plusieurs données dans une même description", () => {

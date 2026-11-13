@@ -105,7 +105,8 @@ async function buildApp(options: AiRoutesOptions) {
   });
   // Même réglage que src/index.ts : seul le premier saut (Caddy) est de confiance.
   const app = Fastify({ logger: { level: "info", stream }, trustProxy: (_address, hop) => hop === 0 });
-  await app.register(aiRoutes, options);
+  // L'assistant est désactivé par défaut : les tests l'activent, sauf s'ils fixent eux-mêmes la variable.
+  await app.register(aiRoutes, { ...options, env: { AI_GENERATION_ENABLED: "true", ...options.env } });
   return { app, logs: lines };
 }
 
@@ -398,17 +399,42 @@ describe("POST /api/simulators/generate", () => {
     assert.deepEqual(await quota.consume("198.51.100.3"), { ok: true });
   });
 
-  it("AI_GENERATION_ENABLED=false → 503 ai_disabled, aucun appel IA", async () => {
-    const f = fakeFetch({});
-    const { app } = await buildApp({
-      env: { DEEPSEEK_API_KEY: DEEPSEEK_KEY, GEMINI_API_KEY: GEMINI_KEY, AI_GENERATION_ENABLED: "false" },
-      fetch: f.impl,
+  // AI_GENERATION_ENABLED : désactivé par défaut, activé seulement par "true", "1" ou "yes".
+  for (const [label, value] of [
+    ["absente", undefined],
+    ["vide", ""],
+    ['"false"', "false"],
+    ['"0"', "0"],
+    ['"off"', "off"],
+    ['"False"', "False"],
+    ['"no"', "no"],
+    ['"enabled"', "enabled"],
+    ['"truee"', "truee"],
+  ] as [string, string | undefined][]) {
+    it(`AI_GENERATION_ENABLED ${label} → désactivé : 503 ai_disabled, aucun appel IA`, async () => {
+      const f = fakeFetch({});
+      const { app, logs } = await buildApp({
+        env: { DEEPSEEK_API_KEY: DEEPSEEK_KEY, GEMINI_API_KEY: GEMINI_KEY, AI_GENERATION_ENABLED: value },
+        fetch: f.impl,
+      });
+      const res = await post(app, { description: DESCRIPTION });
+      assert.equal(res.statusCode, 503);
+      assert.deepEqual(res.json(), { error: "ai_disabled" });
+      assert.equal(f.calls.length, 0);
+      assert.ok(logs.some((l) => l.includes('"msg":"Assistant IA : désactivé (AI_GENERATION_ENABLED)"')));
     });
-    const res = await post(app, { description: DESCRIPTION });
-    assert.equal(res.statusCode, 503);
-    assert.deepEqual(res.json(), { error: "ai_disabled" });
-    assert.equal(f.calls.length, 0);
-  });
+  }
+
+  for (const value of ["true", "1", "yes", " TRUE ", "Yes", "\ttrue\n"]) {
+    it(`AI_GENERATION_ENABLED ${JSON.stringify(value)} → activé`, async () => {
+      const f = fakeFetch({ deepseek: [deepseekOk(VALID_YAML)] });
+      const { app, logs } = await buildApp({ env: { DEEPSEEK_API_KEY: DEEPSEEK_KEY, AI_GENERATION_ENABLED: value }, fetch: f.impl });
+      const res = await post(app, { description: DESCRIPTION });
+      assert.equal(res.statusCode, 200);
+      assert.ok(logs.some((l) => l.includes('"msg":"Assistant IA : activé"')));
+      f.assertDone();
+    });
+  }
 
   it("Valkey injoignable : repli en mémoire avec avertissement, le quota reste appliqué", async () => {
     const f = fakeFetch({ deepseek: Array.from({ length: 10 }, () => deepseekOk(VALID_YAML)) });
