@@ -1,4 +1,6 @@
-// Coquille de l'application : barre latérale (navigation, projet actif, profil) + barre supérieure.
+// Coquille de l'application, disposition inspirée du tableau de bord Supabase : rail d'icônes qui s'élargit
+// au survol ou au focus clavier, barre supérieure avec fil d'Ariane et sélecteur de projet, accès au site
+// public en pied de rail. En mobile, la navigation devient un tiroir complet.
 import { useEffect, useState, type ReactNode } from "react";
 import { Link, useRouter } from "./router.js";
 import { useProjects } from "./projects.js";
@@ -84,30 +86,16 @@ export function AppShell({ children, crumbs, actions, full }: { children: ReactN
     <div className="app">
       {open && <div className="drawer-overlay" style={{ zIndex: 55 }} onClick={() => setOpen(false)} />}
       <aside className={open ? "sidebar open" : "sidebar"} aria-label="Navigation">
-        <Link to={user ? "/app" : "/"} className="brand">
-          <Logo /> Hifrica
+        <Link to={user ? "/app" : "/"} className="brand" aria-label={user ? "Hifrica, tableau de bord" : "Hifrica, accueil"}>
+          <Logo /> <span className="rail-text">Hifrica</span>
         </Link>
-        {user && projects && projects.length > 0 && (
-          <div className="project-switch">
-            <label className="sr-only" htmlFor="project-switch">
-              Projet actif
-            </label>
-            <select id="project-switch" className="input" value={active?.id ?? ""} onChange={(e) => select(e.target.value)}>
-              {projects.map((p) => (
-                <option key={p.id} value={p.id}>
-                  {p.name}
-                </option>
-              ))}
-            </select>
-          </div>
-        )}
         <nav>
           {NAV.map((group) => {
             const items = group.items.filter((i) => !i.auth || user);
             if (items.length === 0) return null;
             return (
               <div className="nav-group" key={group.title}>
-                <div className="nav-label">{group.title}</div>
+                <div className="nav-label rail-text">{group.title}</div>
                 {items.map((item) => {
                   const disabled = item.needsProject && !active;
                   return (
@@ -119,7 +107,7 @@ export function AppShell({ children, crumbs, actions, full }: { children: ReactN
                       aria-disabled={disabled || undefined}
                       title={disabled ? "Créez d'abord un projet" : undefined}
                     >
-                      <Icon name={item.icon} /> {item.label}
+                      <Icon name={item.icon} /> <span className="rail-text">{item.label}</span>
                     </Link>
                   );
                 })}
@@ -128,10 +116,14 @@ export function AppShell({ children, crumbs, actions, full }: { children: ReactN
           })}
         </nav>
         <div className="sidebar-foot">
+          {/* Retour au site public : la page d'accueil de l'application (route « / »). */}
+          <Link to="/" className="nav-item" aria-label="Site public (page d'accueil)">
+            <Icon name="globe" /> <span className="rail-text">Site public</span>
+          </Link>
           {user ? (
             <div className="user-chip">
               <span className="avatar">{user.name.slice(0, 2)}</span>
-              <div className="grow">
+              <div className="grow rail-text">
                 <div className="truncate" style={{ fontSize: "0.84rem", fontWeight: 500 }}>
                   {user.name}
                 </div>
@@ -170,7 +162,22 @@ export function AppShell({ children, crumbs, actions, full }: { children: ReactN
             {crumbs.map((c, i) => (
               <span key={i} className="row-nw" style={{ gap: "0.4rem", minWidth: 0 }}>
                 {i > 0 && <span className="sep">/</span>}
-                {c.to && i < crumbs.length - 1 ? (
+                {i === 0 && user && active && projects && projects.length > 0 && c.label === active.name ? (
+                  // Le projet du fil d'Ariane devient le sélecteur de projet (comme l'organisation/le projet de Supabase).
+                  <span className="crumb-switch">
+                    <label className="sr-only" htmlFor="project-switch">
+                      Projet actif
+                    </label>
+                    <select id="project-switch" value={active.id} onChange={(e) => select(e.target.value)}>
+                      {projects.map((p) => (
+                        <option key={p.id} value={p.id}>
+                          {p.name}
+                        </option>
+                      ))}
+                    </select>
+                    <Icon name="chevronDown" />
+                  </span>
+                ) : c.to && i < crumbs.length - 1 ? (
                   <Link to={c.to} className="truncate">
                     {c.label}
                   </Link>
