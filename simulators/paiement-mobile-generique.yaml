@@ -16,7 +16,8 @@ endpoints:
     webhook:
       on: phone.confirm
       event: checkout.completed
-      body: { status: "succeeded" }
+      # {{response.id}} : le même id que celui renvoyé au client dans la réponse 201.
+      body: { id: "{{response.id}}", status: "succeeded", amount: "{{body.amount}}", currency: "XOF" }
   - id: status
     method: GET
     path: /v1/checkout/{id}
