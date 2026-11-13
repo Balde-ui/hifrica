@@ -4,6 +4,10 @@ export const DEFAULT_CURRENCY = "XOF";
 
 interface BaseEvent {
   createdAt: string;
+  // Corrélation avec X-Hifrica-Request-Id (généré par le moteur à la réception, A-3) : relie la
+  // requête, le paiement, le webhook et la console. Absent pour un événement sans requête
+  // d'origine unique (ex. un futur événement système).
+  requestId?: string;
 }
 
 export interface PaymentPendingEvent extends BaseEvent {
@@ -102,6 +106,7 @@ export function isHifricaEvent(value: unknown): value is HifricaEvent {
   if (!required.every((field) => obj[field] !== undefined && obj[field] !== null)) return false;
   if (typeof obj.projectId !== "string" || typeof obj.createdAt !== "string") return false;
   if (obj.sessionId !== undefined && typeof obj.sessionId !== "string") return false;
+  if (obj.requestId !== undefined && typeof obj.requestId !== "string") return false;
 
   switch (type as HifricaEventType) {
     case "payment.pending":
