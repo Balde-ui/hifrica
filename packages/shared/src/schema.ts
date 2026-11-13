@@ -68,6 +68,9 @@ const ussdMenu = {
     input: { type: "string" },
     next: { type: "string" },
     end: { type: "boolean" },
+    // Si true, la saisie de cette étape (ex. un code PIN) n'est jamais journalisée en clair :
+    // le moteur (B3) et le journal (C4) doivent la masquer avant toute écriture.
+    sensitive: { type: "boolean" },
   },
 } as const;
 
