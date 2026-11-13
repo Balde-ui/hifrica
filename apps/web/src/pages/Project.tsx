@@ -386,9 +386,13 @@ function Settings({ detail, onChange }: { detail: ProjectDetail; onChange: () =>
       <div className="card">
         <h2>Secret de signature des webhooks</h2>
         <p className="muted">
-          Chaque webhook est signé (HMAC-SHA256) avec ce secret propre au projet. Votre app vérifie la signature avant de
-          faire confiance à la notification.
+          Secret propre au projet (HMAC-SHA256), chiffré en base. Votre app l'utilisera pour vérifier la signature des
+          webhooks avant de leur faire confiance.
         </p>
+        <Alert kind="info">
+          En cours d'intégration : les webhooks sont pour l'instant signés avec le secret global du serveur ; la signature
+          par ce secret de projet arrive avec la tâche A5.
+        </Alert>
         {secret ? (
           <div className="stack">
             <div className="secret">{secret}</div>
