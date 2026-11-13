@@ -31,12 +31,27 @@ export interface Scenario {
   delay?: string;
 }
 
+export interface UssdMenu {
+  text: string;
+  /** Branchement par valeur exacte saisie (menu à choix : "1" -> "solde"). */
+  on?: Record<string, string>;
+  /** Si présent, la saisie brute est stockée sous ce nom de variable (menu à saisie libre). */
+  input?: string;
+  /** Menu suivant par défaut : utilisé si `on` ne correspond pas, ou avec `input` pour un enchaînement linéaire. */
+  next?: string;
+  end?: boolean;
+  /** Si true, la saisie de cette étape (ex. un PIN) n'est jamais journalisée ni stockée dans les variables. */
+  sensitive?: boolean;
+}
+
 export interface Simulator {
   name: string;
   kind: "http" | "ussd";
   auth?: "bearer" | "api_key";
   endpoints?: Endpoint[];
   scenarios?: Record<string, Scenario>;
+  code?: string;
+  menus?: Record<string, UssdMenu>;
 }
 
 /** Charge et valide les simulateurs YAML d'un dossier. Un fichier invalide est ignoré et signalé. */
