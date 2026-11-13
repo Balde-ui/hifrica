@@ -1,8 +1,7 @@
-// Tests du contrat partagé packages/shared/src/sessions.ts.
-// Placés dans le moteur tant que packages/shared n'a pas de script "test" (PR #10) : à déplacer ensuite.
+// Tests du contrat partagé des sessions de paiement (sessions.ts).
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { isPhoneSession, PHONE_SESSION_TTL_SEC, phoneSessionKey, type PhoneSession } from "@hifrica/shared";
+import { isPhoneSession, PHONE_SESSION_TTL_SEC, phoneSessionKey, type PhoneSession } from "./sessions.js";
 
 const valid = (): PhoneSession => ({
   sessionId: "8f0c3e2a-1b2c-4d5e-8f90-123456789abc",

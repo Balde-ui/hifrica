@@ -18,6 +18,8 @@
     "db:check": "pnpm --filter @hifrica/db db:check",
     "test:db": "pnpm --filter @hifrica/db test",
     "test:db:pg": "pnpm --filter @hifrica/db test:pg",
-    "licenses:check": "node scripts/check-licenses.mjs"
+    "licenses:check": "node scripts/check-licenses.mjs",
+    "licenses:md": "node scripts/generate-licenses.mjs",
+    "licenses:md:check": "node scripts/generate-licenses.mjs --check"
   }
 }
