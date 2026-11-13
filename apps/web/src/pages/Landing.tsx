@@ -1,45 +1,191 @@
 // Accueil : héros inspiré de prisma.io (cadre, titre centré, puces, boutons pilule, maquette produit),
 // reste de la page inspiré de supabase.com (navigation, grille « bento », titres bicolores, pied de page).
 // Contenu propre à Hifrica ; aucune statistique inventée.
-import type { ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Link } from "../router.js";
 import { useSession } from "../session.js";
 import { Logo } from "../shell.js";
 import { Icon, type IconName } from "../ui.js";
 import { AiArt, CatalogueArt, ConsoleArt, EditorArt, KeysArt, ScenarioArt, SecurityArt } from "./landingArt.js";
 
+/**
+ * Navigation publique, reprise du comportement de prisma.io : en-tête collant de hauteur nulle (il se
+ * superpose au héros, aucun saut de mise en page). En haut de page, barre pleine largeur transparente ;
+ * au défilement, la même barre se resserre en capsule flottante floutée (896 px, 56 px de haut, à 12 px
+ * du haut). Le contenu garde la même position : seul le fond change. Menu « Plateforme » déroulant ;
+ * en mobile, tiroir latéral à droite.
+ */
+const PLATFORM: { to: string; icon: IconName; title: string; text: string; auth?: boolean }[] = [
+  { to: "/app/console", icon: "terminal", title: "Console", text: "Chaque requête de votre app, en direct", auth: true },
+  { to: "/editeur", icon: "code", title: "Éditeur YAML", text: "Écrire, valider et publier un simulateur" },
+  { to: "/demo", icon: "cart", title: "Boutique démo", text: "Une app marchande branchée sur Hifrica", auth: true },
+];
+
 function SiteNav() {
   const { user } = useSession();
+  const [scrolled, setScrolled] = useState(false);
+  const [open, setOpen] = useState(false);
+  const [menu, setMenu] = useState(false);
+  const closeTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const drawerClose = useRef<HTMLButtonElement>(null);
+  const href = (to: string, auth?: boolean) => (auth && !user ? `/inscription?suite=${encodeURIComponent(to)}` : to);
+
+  useEffect(() => {
+    const onScroll = () => {
+      setScrolled(window.scrollY > 24);
+      setMenu(false); // le menu « Plateforme » se referme dès que la page défile
+    };
+    onScroll();
+    window.addEventListener("scroll", onScroll, { passive: true });
+    return () => window.removeEventListener("scroll", onScroll);
+  }, []);
+
+  // Tiroir mobile : Échap ferme, défilement de la page bloqué, focus sur le bouton de fermeture.
+  useEffect(() => {
+    if (!open) return undefined;
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && setOpen(false);
+    const wide = window.matchMedia("(min-width: 900px)");
+    const onWide = () => wide.matches && setOpen(false);
+    const overflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    drawerClose.current?.focus();
+    window.addEventListener("keydown", onKey);
+    wide.addEventListener("change", onWide);
+    return () => {
+      document.body.style.overflow = overflow;
+      window.removeEventListener("keydown", onKey);
+      wide.removeEventListener("change", onWide);
+    };
+  }, [open]);
+
+  useEffect(() => () => clearTimeout(closeTimer.current), []);
+  const openMenu = () => {
+    clearTimeout(closeTimer.current);
+    setMenu(true);
+  };
+  const closeMenu = () => {
+    clearTimeout(closeTimer.current);
+    closeTimer.current = setTimeout(() => setMenu(false), 120);
+  };
+
   return (
-    <header className="p-nav">
-      <Link to="/" className="brand">
-        <Logo /> Hifrica
-      </Link>
-      <nav className="p-links" aria-label="Navigation">
-        <Link to="/catalogue">Catalogue</Link>
-        <Link to="/editeur">Éditeur</Link>
-        <Link to={user ? "/demo" : "/inscription"}>Démo</Link>
-        <Link to={user ? "/app/console" : "/inscription"}>Console</Link>
-      </nav>
-      <div className="p-actions">
-        {user ? (
-          <Link to="/app" className="pill pill-solid pill-sm">
-            Tableau de bord
+    <>
+      <header className="pn-header">
+        <div className={`pn-bar${scrolled ? " is-scrolled" : ""}`}>
+          <div className="pn-inner">
+            <Link to="/" className="pn-brand" aria-label="Hifrica, accueil">
+              <Logo /> Hifrica
+            </Link>
+            <nav className="pn-links" aria-label="Navigation">
+              <div
+                className="pn-dd"
+                onMouseEnter={openMenu}
+                onMouseLeave={closeMenu}
+                onBlur={(e) => !e.currentTarget.contains(e.relatedTarget as Node | null) && closeMenu()}
+                onKeyDown={(e) => e.key === "Escape" && setMenu(false)}
+              >
+                <button type="button" className="pn-link pn-dd-trigger" aria-expanded={menu} aria-controls="pn-platform" onClick={() => setMenu((v) => !v)}>
+                  Plateforme <Icon name="chevronDown" size={14} />
+                </button>
+                <div id="pn-platform" className={`pn-dd-panel${menu ? " is-open" : ""}`} onClickCapture={() => setMenu(false)}>
+                  {PLATFORM.map((item) => (
+                    <Link key={item.title} to={href(item.to, item.auth)} className="pn-dd-item" tabIndex={menu ? 0 : -1}>
+                      <span className="pn-dd-icon">
+                        <Icon name={item.icon} size={14} />
+                      </span>
+                      <span>
+                        <span className="pn-dd-title">{item.title}</span>
+                        <span className="pn-dd-text">{item.text}</span>
+                      </span>
+                    </Link>
+                  ))}
+                  <div className="pn-dd-sep" />
+                  <Link to="/catalogue" className="pn-dd-more" tabIndex={menu ? 0 : -1}>
+                    Parcourir le catalogue <span aria-hidden="true">→</span>
+                  </Link>
+                </div>
+              </div>
+              <Link to="/catalogue" className="pn-link">
+                Catalogue
+              </Link>
+              <a href={README} className="pn-link" target="_blank" rel="noreferrer">
+                Documentation
+              </a>
+              <a href={REPO} className="pn-link" target="_blank" rel="noreferrer">
+                GitHub
+              </a>
+            </nav>
+            <div className="pn-actions">
+              {user ? (
+                <Link to="/app" className="pn-pill pn-pill-solid">
+                  Tableau de bord
+                </Link>
+              ) : (
+                <>
+                  <Link to="/connexion" className="pn-pill pn-pill-ghost">
+                    Se connecter
+                  </Link>
+                  <Link to="/inscription" className="pn-pill pn-pill-solid">
+                    Commencer
+                  </Link>
+                </>
+              )}
+              <button type="button" className="pn-burger" aria-expanded={open} aria-controls="pn-drawer" aria-label="Ouvrir le menu" onClick={() => setOpen(true)}>
+                <Icon name="menu" />
+              </button>
+            </div>
+          </div>
+        </div>
+      </header>
+
+      <div className={`pn-overlay${open ? " is-open" : ""}`} onClick={() => setOpen(false)} aria-hidden="true" />
+      <aside id="pn-drawer" className={`pn-drawer${open ? " is-open" : ""}`} aria-label="Menu" aria-hidden={!open} inert={!open ? true : undefined}>
+        <button ref={drawerClose} type="button" className="pn-drawer-close" aria-label="Fermer le menu" onClick={() => setOpen(false)}>
+          <Icon name="x" size={14} />
+        </button>
+        <nav onClickCapture={() => setOpen(false)}>
+          <p className="pn-drawer-label">Plateforme</p>
+          {PLATFORM.map((item) => (
+            <Link key={item.title} to={href(item.to, item.auth)} className="pn-drawer-link">
+              {item.title}
+            </Link>
+          ))}
+          <div className="pn-drawer-sep" />
+          <Link to="/catalogue" className="pn-drawer-link">
+            Catalogue
           </Link>
-        ) : (
-          <>
-            <Link to="/connexion" className="p-login">
-              Se connecter
-            </Link>
-            <Link to="/inscription" className="pill pill-solid pill-sm">
-              Commencer
-            </Link>
-          </>
-        )}
-      </div>
-    </header>
+          <a href={README} className="pn-drawer-link" target="_blank" rel="noreferrer">
+            Documentation
+          </a>
+          <a href={REPO} className="pn-drawer-link" target="_blank" rel="noreferrer">
+            GitHub
+          </a>
+          <div className="pn-drawer-sep" />
+          <div className="pn-drawer-actions">
+            {user ? (
+              <Link to="/app" className="pn-pill pn-pill-solid">
+                Tableau de bord
+              </Link>
+            ) : (
+              <>
+                <Link to="/connexion" className="pn-pill pn-pill-outline">
+                  Se connecter
+                </Link>
+                <Link to="/inscription" className="pn-pill pn-pill-solid">
+                  Commencer
+                </Link>
+              </>
+            )}
+          </div>
+        </nav>
+      </aside>
+    </>
   );
 }
+
+/** Dépôt public du projet (évaluation CADEV) et son README, seules sources de documentation existantes. */
+const REPO = "https://github.com/Balde-ui/hifrica";
+const README = `${REPO}/blob/main/README.md`;
 
 const MOCK_ROWS = [
   { status: 201, method: "POST", path: "/paiement-mobile-generique/v1/checkout", scenario: null, ms: 24 },
@@ -112,8 +258,8 @@ export function Landing() {
   const start = user ? "/app" : "/inscription";
   return (
     <div className="site">
+      <SiteNav />
       <section className="hero-frame">
-        <SiteNav />
         <div className="hero-center">
           <h1 className="hero-title">
             Votre app de paiement mobile,
@@ -129,7 +275,7 @@ export function Landing() {
               [
                 ["#2dd4bf", "Sans compte marchand"],
                 ["#facc15", "Scénarios d'échec en un clic"],
-                ["#f43f5e", "Gratuit et open source"],
+                ["#f43f5e", "Gratuit pour les développeurs"],
               ] as const
             ).map(([color, label]) => (
               <li key={label}>
@@ -267,31 +413,61 @@ export function Landing() {
         </div>
       </section>
 
-      <footer className="site-foot">
-        <div className="container foot-grid">
-          <div>
-            <Link to="/" className="brand" style={{ padding: 0, marginBottom: "0.9rem" }}>
+      <footer className="pf">
+        <div className="pf-inner">
+          <div className="pf-brand">
+            <Link to="/" className="pn-brand" aria-label="Hifrica, accueil">
               <Logo /> Hifrica
             </Link>
-            <p>Simulateurs de paiement mobile, d'USSD et de SMS pour tester les apps africaines. Aucune transaction réelle.</p>
+            <a href={REPO} className="pf-contact" target="_blank" rel="noreferrer">
+              <Icon name="git" size={15} /> github.com/Balde-ui/hifrica
+            </a>
+            <a href={README} className="pf-contact" target="_blank" rel="noreferrer">
+              <Icon name="book" size={15} /> Documentation du projet
+            </a>
+            <p className="pf-copy">© 2026 Équipe Hifrica. Tous droits réservés.</p>
           </div>
-          <div>
-            <h4>Produit</h4>
-            <Link to="/catalogue">Catalogue</Link>
-            <Link to="/editeur">Éditeur YAML</Link>
-            <Link to={user ? "/demo" : "/inscription"}>Boutique démo</Link>
+          <div className="pf-cols">
+            <div>
+              <h3>Plateforme</h3>
+              <Link to="/catalogue">Catalogue</Link>
+              <Link to="/editeur">Éditeur YAML</Link>
+              <Link to={user ? "/demo" : "/inscription"}>Boutique démo</Link>
+              <Link to={user ? "/app/console" : "/inscription"}>Console</Link>
+              <Link to={user ? "/app/cles" : "/inscription"}>Clés API</Link>
+            </div>
+            <div>
+              <h3>Documentation</h3>
+              <a href={`${README}#démarrage-en-5-minutes`} target="_blank" rel="noreferrer">Démarrage en 5 minutes</a>
+              <a href={`${README}#écrire-son-simulateur`} target="_blank" rel="noreferrer">Écrire un simulateur</a>
+              <a href={`${README}#simulateur-ussd`} target="_blank" rel="noreferrer">Simulateur USSD</a>
+              <a href={`${README}#webhooks`} target="_blank" rel="noreferrer">Webhooks</a>
+              <a href={`${README}#architecture`} target="_blank" rel="noreferrer">Architecture</a>
+            </div>
+            <div>
+              <h3>Développeurs</h3>
+              {user ? <Link to="/app">Tableau de bord</Link> : <Link to="/inscription">Créer un compte</Link>}
+              {!user && <Link to="/connexion">Se connecter</Link>}
+              <a href={`${README}#vérifier-la-signature-nodejs`} target="_blank" rel="noreferrer">Vérifier une signature</a>
+              <a href={`${README}#développement-local`} target="_blank" rel="noreferrer">Développement local</a>
+            </div>
+            <div>
+              <h3>Licences</h3>
+              <a href={`${REPO}/blob/main/LICENSE`} target="_blank" rel="noreferrer">Licence du code</a>
+              <a href="https://creativecommons.org/licenses/by/4.0/deed.fr" target="_blank" rel="noreferrer">Simulateurs : CC BY 4.0</a>
+              <a href={`${REPO}/blob/main/LICENSES.md`} target="_blank" rel="noreferrer">Licences des dépendances</a>
+              <a href={`${REPO}/blob/main/AI_USAGE.md`} target="_blank" rel="noreferrer">Usage de l'IA</a>
+            </div>
+            <div>
+              <h3>Code source</h3>
+              <a href={REPO} className="pf-social" target="_blank" rel="noreferrer">
+                <Icon name="git" size={14} /> GitHub
+              </a>
+            </div>
           </div>
-          <div>
-            <h4>Compte</h4>
-            <Link to="/inscription">Créer un compte</Link>
-            <Link to="/connexion">Se connecter</Link>
-            {user && <Link to="/app">Tableau de bord</Link>}
-          </div>
-          <div>
-            <h4>Projet</h4>
-            <p>CADEV 2026</p>
-            <p>Simulateurs sous CC BY 4.0</p>
-          </div>
+        </div>
+        <div className="pf-word" aria-hidden="true">
+          Hifrica
         </div>
       </footer>
     </div>

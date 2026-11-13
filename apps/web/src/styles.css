@@ -315,7 +315,7 @@ kbd { background: var(--surface-3); border: 1px solid var(--border-strong); bord
 .container { max-width: 1128px; margin: 0 auto; padding: 0 1.5rem; }
 
 /* Héros façon Prisma : cadre arrondi, titre centré, puces colorées, boutons pilule, maquette produit lumineuse */
-.hero-frame { margin: 0.75rem 0.75rem 0; border: 1px solid var(--border); border-radius: 28px; position: relative; overflow: hidden;
+.hero-frame { margin: 0.75rem 0.75rem 0; padding-top: 72px; border: 1px solid var(--border); border-radius: 28px; position: relative; overflow: hidden;
   background:
     radial-gradient(700px 380px at 50% -10%, rgba(255, 255, 255, 0.06), transparent 70%),
     linear-gradient(180deg, #202020 0%, #1c1c1c 60%); }
@@ -387,12 +387,6 @@ kbd { background: var(--surface-3); border: 1px solid var(--border-strong); bord
 .step p { color: var(--muted); font-size: 0.9rem; }
 .cta-band { margin: clamp(4rem, 8vw, 6rem) 0 0; padding: 4rem 0; border-top: 1px solid var(--border); text-align: center; }
 .cta-band h2 { font-size: clamp(1.7rem, 3.4vw, 2.5rem); font-weight: 450; letter-spacing: -0.02em; }
-.site-foot { border-top: 1px solid var(--border); padding: 3rem 0 2.5rem; }
-.foot-grid { display: grid; grid-template-columns: 1.4fr repeat(3, minmax(0, 1fr)); gap: 2rem; }
-.foot-grid h4 { font-size: 0.85rem; font-weight: 500; color: var(--text); margin-bottom: 0.9rem; }
-.foot-grid a, .foot-grid p { display: block; color: var(--muted); font-size: 0.85rem; margin-bottom: 0.55rem; }
-.foot-grid a:hover { color: var(--text); text-decoration: none; }
-.foot-grid a.brand { display: flex; color: var(--text); font-size: 1rem; }
 @media (max-width: 960px) { .bento-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } .bento.tall { grid-row: auto; min-height: 260px; } .steps-grid { grid-template-columns: minmax(0, 1fr); } .foot-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 @media (max-width: 600px) { .bento-grid { grid-template-columns: minmax(0, 1fr); } .bento.span-2 { grid-column: auto; } .hero-frame { margin: 0.4rem; border-radius: 20px; } }
 
@@ -468,13 +462,16 @@ kbd { background: var(--surface-3); border: 1px solid var(--border-strong); bord
 .checkout h3 { color: #1b1f24; font-size: 0.98rem; }
 .line { display: flex; justify-content: space-between; gap: 1rem; font-size: 0.84rem; color: #5b616a; padding: 0.25rem 0; }
 .line.total { color: #1b1f24; font-weight: 700; font-size: 1rem; border-top: 1px solid #ebe8e1; margin-top: 0.5rem; padding-top: 0.7rem; }
-.pay-btn { width: 100%; height: 44px; border: none; border-radius: 8px; background: #1b1f24; color: #fff; font-weight: 600; font-size: 0.92rem; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; gap: 0.5rem; margin-top: 0.9rem; transition: background 0.15s; }
+.line > span:last-child { white-space: nowrap; flex: none; text-align: right; } /* montant jamais coupé entre le nombre et « FCFA » */
+.pay-btn { width: 100%; min-height: 44px; padding: 0.55rem 0.9rem; border: none; border-radius: 8px; background: #1b1f24; color: #fff; font-weight: 600; font-size: 0.92rem; line-height: 1.3; text-align: center; cursor: pointer; display: inline-flex; flex-wrap: wrap; align-items: center; justify-content: center; column-gap: 0.35rem; row-gap: 0.1rem; margin-top: 0.9rem; transition: background 0.15s; }
+.pay-btn > * { white-space: nowrap; }
 .pay-btn:hover { background: #2c3239; }
 .pay-btn:disabled { opacity: 0.45; cursor: not-allowed; }
 .pay-result { margin-top: 0.9rem; border-radius: 8px; padding: 0.75rem 0.85rem; font-size: 0.84rem; border: 1px solid; }
 .pay-ok { background: #ecf8f1; border-color: #b7e2c8; color: #155c35; }
 .pay-ko { background: #fdf2e6; border-color: #f2cfa3; color: #8a4b0b; }
 .pay-err { background: #fdeceb; border-color: #f2b9b6; color: #8f1d17; }
+.pay-pending { background: #eaf3fd; border-color: #b9d6f5; color: #164a7a; }
 @media (max-width: 1060px) { .shop-body { grid-template-columns: minmax(0, 1fr); } .checkout { position: static; } }
 @media (max-width: 520px) { .products { grid-template-columns: minmax(0, 1fr); } .shop-body { padding: 0.9rem; } }
 
@@ -487,18 +484,79 @@ kbd { background: var(--surface-3); border: 1px solid var(--border-strong); bord
 /* =====================================================================================================
    Navigation façon Prisma : intégrée au cadre du héros, logo à gauche, liens centrés, actions à droite
    ===================================================================================================== */
-.p-nav { position: relative; z-index: 5; display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: 1rem; padding: 1.6rem clamp(1.25rem, 3.5vw, 3rem) 0; }
-.p-nav .brand { padding: 0; font-size: 1.2rem; font-weight: 600; letter-spacing: -0.02em; }
-.p-links { display: flex; gap: 0.25rem; }
-.p-links a { color: var(--text-2); font-size: 0.95rem; font-weight: 450; padding: 0.4rem 0.75rem; border-radius: 999px; transition: color 0.15s, background 0.15s; }
-.p-links a:hover { color: var(--text); background: rgba(255, 255, 255, 0.05); text-decoration: none; }
-.p-actions { display: flex; align-items: center; justify-content: flex-end; gap: 0.5rem; }
-.p-login { color: var(--text); font-weight: 500; font-size: 0.95rem; padding: 0.4rem 0.8rem; border-radius: 999px; }
-.p-login:hover { background: rgba(255, 255, 255, 0.05); text-decoration: none; }
-.pill-sm { height: 38px; padding: 0 1.1rem; font-size: 0.92rem; }
-.pill-solid { background: #fafafa; color: #121212; }
-.pill-solid:hover { background: #fff; }
-@media (max-width: 860px) { .p-nav { grid-template-columns: 1fr auto; } .p-links { display: none; } .p-login { display: none; } }
+/* ---- Navigation publique, reprise de prisma.io (mesures relevées sur le site) ----
+   En-tête collant de hauteur nulle : la barre se superpose au héros (aucun saut). En haut : pleine largeur,
+   72 px, transparente. Au défilement : capsule de 896 px, 56 px, à 12 px du haut, fond à 85 %, flou 12 px.
+   Le contenu (.pn-inner, 856 px) ne bouge pas : seul le fond se resserre autour de lui. */
+.pn-header { position: sticky; top: 0; z-index: 50; height: 0; display: flow-root; } /* flow-root : la marge de la barre reste dans l'en-tête (sinon décalage de 12 px) */
+.pn-bar { box-sizing: border-box; width: 100%; max-width: 1536px; height: 72px; margin: 24px auto 0; padding: 0 64px; border: 1px solid transparent; border-radius: 9999px; background: transparent; transition: all 0.5s cubic-bezier(0.22, 1, 0.36, 1); }
+.pn-bar.is-scrolled { max-width: 896px; height: 56px; margin-top: 12px; padding: 0 20px; background: rgba(28, 28, 28, 0.85); -webkit-backdrop-filter: blur(12px); backdrop-filter: blur(12px); border-color: rgba(255, 255, 255, 0.08); box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3); }
+.pn-inner { height: 100%; max-width: 856px; margin: 0 auto; display: flex; align-items: center; gap: 24px; }
+.pn-brand { display: inline-flex; align-items: center; gap: 0.5rem; color: var(--text); font-family: var(--display, inherit); font-size: 1.25rem; font-weight: 600; letter-spacing: -0.02em; white-space: nowrap; }
+.pn-brand:hover { text-decoration: none; }
+.pn-links { display: flex; align-items: center; gap: 24px; margin-left: 40px; flex: 1; }
+.pn-link { display: inline-flex; align-items: center; gap: 0.25rem; padding: 0; border: 0; background: none; color: var(--muted); font: inherit; font-size: 14px; font-weight: 500; line-height: 20px; cursor: pointer; transition: color 0.15s; }
+.pn-link:hover, .pn-link[aria-expanded="true"] { color: var(--text); text-decoration: none; }
+.pn-link svg { transition: transform 0.2s; }
+.pn-link[aria-expanded="true"] svg { transform: rotate(180deg); }
+.pn-actions { display: flex; align-items: center; gap: 12px; margin-left: auto; }
+.pn-pill { display: inline-flex; align-items: center; justify-content: center; height: 36px; padding: 8px 16px; border-radius: 9999px; font-size: 14px; font-weight: 600; white-space: nowrap; transition: background 0.15s, color 0.15s, border-color 0.15s; }
+.pn-pill:hover { text-decoration: none; }
+.pn-pill-ghost { color: var(--text); }
+.pn-pill-ghost:hover { background: rgba(255, 255, 255, 0.06); }
+.pn-pill-solid { background: #fafafa; color: #121212; }
+.pn-pill-solid:hover { background: #ffffff; }
+.pn-pill-outline { border: 1px solid var(--border-strong); color: var(--text); }
+.pn-pill-outline:hover { background: rgba(255, 255, 255, 0.05); }
+.pn-burger { display: none; align-items: center; justify-content: center; width: 36px; height: 36px; border: 0; border-radius: 9999px; background: transparent; color: var(--text); cursor: pointer; }
+.pn-burger:hover { background: rgba(255, 255, 255, 0.06); }
+/* Menu « Plateforme » : carte de 324 px, rayon 8 px, éléments icône + titre 14 px + description 12 px */
+.pn-dd { position: relative; }
+.pn-dd-panel { position: absolute; top: calc(100% + 18px); left: -10px; width: 324px; padding: 8px 10px 8px 8px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface, #1f1f1f); box-shadow: 0 18px 40px rgba(0, 0, 0, 0.45); opacity: 0; transform: translateY(-4px); pointer-events: none; transition: opacity 0.18s ease, transform 0.18s ease; }
+.pn-dd-panel::before { content: ""; position: absolute; left: 0; right: 0; top: -20px; height: 20px; }
+.pn-dd-panel.is-open { opacity: 1; transform: none; pointer-events: auto; }
+.pn-dd-item { display: flex; gap: 12px; padding: 10px; border-radius: 6px; color: var(--text); }
+.pn-dd-item:hover, .pn-dd-item:focus-visible { background: rgba(255, 255, 255, 0.04); text-decoration: none; }
+.pn-dd-icon { display: inline-flex; align-items: center; justify-content: center; flex: none; width: 28px; height: 28px; border: 1px solid var(--border-strong); border-radius: 6px; color: var(--text-2); }
+.pn-dd-title { display: block; font-size: 14px; font-weight: 500; line-height: 20px; }
+.pn-dd-text { display: block; font-size: 12px; line-height: 16px; color: var(--muted); }
+.pn-dd-sep { height: 1px; margin: 6px 0 6px 2px; background: var(--border); }
+.pn-dd-more { display: flex; align-items: center; gap: 0.5rem; padding: 10px; border-radius: 6px; color: var(--text); font-size: 14px; font-weight: 500; }
+.pn-dd-more:hover { background: rgba(255, 255, 255, 0.04); text-decoration: none; }
+/* Tiroir mobile, à droite, sur un fond assombri */
+.pn-overlay { position: fixed; inset: 0; z-index: 60; background: rgba(0, 0, 0, 0.55); opacity: 0; pointer-events: none; transition: opacity 0.3s ease; }
+.pn-overlay.is-open { opacity: 1; pointer-events: auto; }
+.pn-drawer { position: fixed; top: 0; right: 0; bottom: 0; z-index: 61; width: min(300px, 82vw); padding: 20px 20px 24px; overflow-y: auto; border-left: 1px solid var(--border); background: #161616; transform: translateX(100%); transition: transform 0.45s cubic-bezier(0.22, 1, 0.36, 1); }
+.pn-drawer.is-open { transform: none; }
+.pn-drawer-close { position: absolute; top: 16px; right: 16px; display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; border: 1px solid var(--border-strong); border-radius: 6px; background: transparent; color: var(--text); cursor: pointer; }
+.pn-drawer-label { margin: 8px 0 8px; font-size: 11px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
+.pn-drawer-link { display: block; padding: 8px 0; color: var(--text); font-size: 17px; line-height: 21px; }
+.pn-drawer-link:hover { color: var(--accent); text-decoration: none; }
+.pn-drawer-sep { height: 1px; margin: 14px 0; background: var(--border); }
+.pn-drawer-actions { display: flex; flex-direction: column; gap: 10px; }
+.pn-drawer-actions .pn-pill { width: 100%; height: 32px; padding: 6px 16px; }
+@media (max-width: 899px) { .pn-links { display: none; } .pn-burger { display: inline-flex; } .pn-bar { padding: 0 32px; } .pn-bar.is-scrolled { max-width: calc(100% - 24px); padding: 0 20px; } }
+@media (max-width: 639px) { .pn-actions > .pn-pill { display: none; } .pn-bar { height: 64px; } .pn-bar.is-scrolled { height: 56px; } }
+@media (min-width: 900px) { .pn-overlay, .pn-drawer { display: none; } }
+@media (prefers-reduced-motion: reduce) { .pn-bar, .pn-drawer, .pn-overlay, .pn-dd-panel { transition: none; } }
+
+/* ---- Pied de page, reprise de prisma.io : marque à gauche, 5 colonnes de liens 14 px, grand logotype ---- */
+.pf { padding-top: 64px; overflow: hidden; }
+.pf-inner { max-width: 1360px; margin: 0 auto; padding: 0 40px; display: grid; grid-template-columns: minmax(0, 482px) minmax(0, 1fr); }
+.pf-brand { display: flex; flex-direction: column; align-items: flex-start; gap: 12px; }
+.pf-brand .pn-brand { margin-bottom: 4px; }
+.pf-contact { display: inline-flex; align-items: center; gap: 10px; color: var(--muted); font-size: 14px; line-height: 20px; }
+.pf-contact:hover { color: var(--text); text-decoration: none; }
+.pf-copy { margin: 0; color: var(--muted); font-size: 14px; line-height: 20px; }
+.pf-cols { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 32px 0; }
+.pf-cols h3 { margin: 0 0 12px; color: var(--text); font-size: 14px; font-weight: 500; line-height: 20px; }
+.pf-cols a { display: flex; align-items: center; gap: 8px; width: fit-content; margin-bottom: 12px; color: var(--muted); font-size: 14px; line-height: 20px; }
+.pf-cols a:hover { color: var(--text); text-decoration: none; }
+.pf-word { max-width: 1360px; margin: 48px auto 0; padding: 0 40px; font-family: var(--display, inherit); font-weight: 600; font-size: min(calc((100vw - 80px) / 3.28), 390px); line-height: 0.84; padding-bottom: 0.05em; letter-spacing: -0.03em; /* largeur du mot = largeur du conteneur */ white-space: nowrap; user-select: none;
+  /* Logotype plein, traversé de trois bandes vertes de la charte (pas de couleurs d'un drapeau). */
+  background: linear-gradient(176deg, #ededed 0 52%, #3ecf8e 52% 60%, #2bb07a 60% 68%, #1d8a5d 68% 76%, #ededed 76% 100%); -webkit-background-clip: text; background-clip: text; color: transparent; }
+@media (max-width: 1100px) { .pf-inner { grid-template-columns: minmax(0, 1fr); gap: 48px; } }
+@media (max-width: 720px) { .pf-inner, .pf-word { padding: 0 20px; } .pf-cols { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 28px 20px; } .pf-word { margin-top: 40px; font-size: calc((100vw - 40px) / 3.28); } }
 
 /* =====================================================================================================
    Illustrations animées des cartes (façon supabase.com)

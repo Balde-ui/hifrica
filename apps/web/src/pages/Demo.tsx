@@ -235,7 +235,13 @@ export function DemoShop() {
 function interpret(r: SendResult): { cls: string; title: string; text: string } {
   const body = (r.body ?? {}) as { status?: string; error?: string };
   if (r.status === 201 || r.status === 200) {
-    return { cls: "pay-ok", title: "Paiement initié ✓", text: `Statut « ${body.status ?? "pending"} » : le client valide sur son téléphone, puis la boutique reçoit un webhook signé.` };
+    // Honnête tant que la réception du webhook par la boutique (A5, C6) n'est pas branchée : on n'annonce
+    // que ce qui s'est réellement passé, une demande acceptée qui attend la validation du client.
+    return {
+      cls: "pay-pending",
+      title: "En attente de confirmation du client",
+      text: `Le simulateur a accepté la demande (statut « ${body.status ?? "pending"} »). Le client doit maintenant valider le paiement sur son téléphone. Cette démo n'affiche pas encore la confirmation finale ni le webhook reçu par la boutique.`,
+    };
   }
   if (r.status === 402) {
     return { cls: "pay-ko", title: "Paiement refusé : solde insuffisant", text: "La boutique affiche l'échec et propose un autre moyen de paiement, sans planter." };
