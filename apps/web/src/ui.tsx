@@ -47,6 +47,7 @@ const PATHS: Record<string, ReactNode> = {
   user: <><circle cx="12" cy="8" r="4" /><path d="M4 21c1.2-4 4.4-6 8-6s6.8 2 8 6" /></>,
   filter: <path d="M4 5h16l-6 7.5V19l-4 2v-8.5z" />,
   globe: <><circle cx="12" cy="12" r="9" /><path d="M3 12h18M12 3c2.5 2.6 3.7 5.6 3.7 9s-1.2 6.4-3.7 9c-2.5-2.6-3.7-5.6-3.7-9S9.5 5.6 12 3z" /></>,
+  panel: <><rect x="3" y="3" width="18" height="18" rx="2.5" /><path d="M9 3v2.5M9 9.5v1.5M9 14.5V16M9 19v2" /></>,
 };
 
 export type IconName = keyof typeof PATHS;

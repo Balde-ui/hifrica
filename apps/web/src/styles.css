@@ -41,8 +41,8 @@
   --radius: 8px;
   --radius-lg: 12px;
   --radius-xl: 16px;
-  --sidebar-w: 240px;
-  --rail-w: 56px;
+  --sidebar-w: 208px;
+  --rail-w: 48px;
   --topbar-h: 48px;
   --font: "Inter Variable", Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
   --display: "Sora Variable", Sora, var(--font);
@@ -259,35 +259,71 @@ kbd { background: var(--surface-3); border: 1px solid var(--border-strong); bord
 /* =====================================================================================================
    Coquille de l'application : barre latérale + barre supérieure
    ===================================================================================================== */
-/* ---- Coquille de l'application, disposition inspirée du tableau de bord Supabase ----
-   Bureau : rail d'icônes de 56 px qui s'élargit au survol ou au focus clavier (au-dessus du contenu, sans le
-   décaler) ; barre supérieure avec fil d'Ariane et sélecteur de projet. Mobile : tiroir complet (plus bas). */
-.app { display: grid; grid-template-columns: var(--rail-w) minmax(0, 1fr); min-height: 100vh; }
-.sidebar { position: sticky; top: 0; height: 100vh; width: var(--rail-w); display: flex; flex-direction: column; gap: 2px; background: var(--bg-elev); border-right: 1px solid var(--border); padding: 0.6rem 0.5rem; overflow-x: hidden; overflow-y: auto; z-index: 60; transition: width 0.18s var(--ease), box-shadow 0.18s var(--ease); }
-.sidebar:hover, .sidebar:focus-within { width: var(--sidebar-w); box-shadow: 16px 0 40px rgba(0, 0, 0, 0.35); }
-.brand { display: flex; align-items: center; gap: 0.65rem; height: 40px; padding: 0 0.4rem; margin-bottom: 0.5rem; color: var(--text); font-weight: 600; font-size: 0.98rem; letter-spacing: -0.01em; white-space: nowrap; }
-.brand:hover { text-decoration: none; }
-.logo { width: 26px; height: 26px; border-radius: 7px; background: var(--accent); color: #0b2b1d; display: grid; place-items: center; flex: none; }
-.logo svg { width: 16px; height: 16px; }
-.rail-text { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; opacity: 0; transition: opacity 0.14s var(--ease); }
-.sidebar:hover .rail-text, .sidebar:focus-within .rail-text { opacity: 1; }
-.nav-group { padding-top: 0.5rem; margin-top: 0.5rem; border-top: 1px solid var(--border); }
-.nav-group:first-of-type { padding-top: 0; margin-top: 0; border-top: none; }
-.nav-label { height: 18px; padding: 0 0.6rem; font-size: 0.66rem; line-height: 18px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--faint); font-weight: 600; }
-.nav-item { display: flex; align-items: center; gap: 0.75rem; height: 36px; padding: 0 0.6rem; border-radius: var(--radius-sm); color: var(--text-2); font-size: 0.86rem; font-weight: 450; transition: background 0.12s, color 0.12s; position: relative; }
-.nav-item svg { width: 17px; height: 17px; flex: none; color: var(--muted); transition: color 0.12s; }
-/* Survol : léger, sans barre ni icône verte. Actif : fond plein, barre et icône vertes, texte gras. */
-.nav-item:hover { background: rgba(255, 255, 255, 0.035); color: var(--text); text-decoration: none; }
-.nav-item:hover svg { color: var(--text-2); }
-.nav-item.active, .nav-item.active:hover { background: var(--surface-3); color: var(--text); font-weight: 550; }
-.nav-item.active svg { color: var(--accent); }
-.nav-item.active::before { content: ""; position: absolute; left: -0.5rem; top: 8px; bottom: 8px; width: 3px; border-radius: 0 3px 3px 0; background: var(--accent); }
+/* ---- Coquille de l'application, calquée sur le tableau de bord Supabase ----
+   En-tête pleine largeur (48 px) ; dessous, barre latérale + contenu. La barre suit le mode choisi dans son
+   « Contrôle » (attribut data-sidebar sur .app) :
+   - open (défaut) : panneau de 208 px qui décale le contenu, rien n'est jamais masqué ;
+   - closed : rail d'icônes de 48 px, libellés en infobulle ;
+   - expandable : rail de 48 px qui s'élargit au survol ou au focus clavier AU-DESSUS du contenu (Supabase). */
+.app { display: flex; flex-direction: column; min-height: 100vh; }
+.app-body { flex: 1; display: grid; grid-template-columns: var(--sidebar-w) minmax(0, 1fr); }
+.app[data-sidebar="closed"] .app-body, .app[data-sidebar="expandable"] .app-body { grid-template-columns: var(--rail-w) minmax(0, 1fr); }
+.sidebar-slot { position: relative; min-width: 0; }
+.sidebar { position: sticky; top: var(--topbar-h); height: calc(100vh - var(--topbar-h)); width: var(--sidebar-w); display: flex; flex-direction: column; background: var(--bg-elev); border-right: 1px solid var(--border); padding: 0.5rem; overflow-x: hidden; overflow-y: auto; z-index: 45; }
+.app[data-sidebar="closed"] .sidebar { width: var(--rail-w); }
+/* « Déployée au survol », fluide : le panneau garde sa largeur de 208 px (aucun recalcul de mise en page,
+   aucun libellé qui se recoupe) et seule sa zone visible s'ouvre, par clip-path. clip-path découpe aussi la
+   zone cliquable : replié, le panneau n'intercepte rien au-dessus du contenu. Léger délai à l'ouverture
+   (intention de survol) pour ne pas déployer en traversant le rail ; fermeture immédiate. */
+.app[data-sidebar="expandable"] .sidebar { width: var(--sidebar-w); border-right-color: transparent; box-shadow: 12px 0 32px rgba(0, 0, 0, 0.35); clip-path: inset(0 calc(var(--sidebar-w) - var(--rail-w)) 0 0); transition: clip-path 0.22s cubic-bezier(0.2, 0.8, 0.2, 1), border-color 0.22s; will-change: clip-path; }
+.app[data-sidebar="expandable"] .sidebar::after { content: ""; position: absolute; top: 0; bottom: 0; left: calc(var(--rail-w) - 1px); width: 1px; background: var(--border); pointer-events: none; transition: opacity 0.12s; }
+.app[data-sidebar="expandable"] .sidebar:hover, .app[data-sidebar="expandable"] .sidebar:focus-within { clip-path: inset(0 -48px 0 0); border-right-color: var(--border); transition-delay: 0.07s; }
+.app[data-sidebar="expandable"] .sidebar:hover::after, .app[data-sidebar="expandable"] .sidebar:focus-within::after { opacity: 0; transition-delay: 0.07s; }
+.rail-text { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; transition: opacity 0.12s var(--ease); }
+.app[data-sidebar="closed"] .rail-text, .app[data-sidebar="expandable"] .rail-text { opacity: 0; }
+.app[data-sidebar="expandable"] .rail-text { transform: translateX(-4px); transition: opacity 0.16s var(--ease), transform 0.22s cubic-bezier(0.2, 0.8, 0.2, 1); }
+.app[data-sidebar="expandable"] .sidebar:hover .rail-text, .app[data-sidebar="expandable"] .sidebar:focus-within .rail-text { opacity: 1; transform: none; transition-delay: 0.1s; }
+@media (prefers-reduced-motion: reduce) {
+  .sidebar, .app[data-sidebar] .sidebar, .app[data-sidebar] .sidebar:hover, .app[data-sidebar] .rail-text, .app[data-sidebar] .sidebar:hover .rail-text { transition: none !important; }
+}
+.sidebar-nav { display: flex; flex-direction: column; }
+/* Groupes séparés par un trait, sans titre (comme Supabase). */
+.nav-group { display: flex; flex-direction: column; gap: 2px; padding: 0.5rem 0; }
+.nav-group:first-child { padding-top: 0; }
+.nav-group + .nav-group { border-top: 1px solid var(--border); }
+/* Icône centrée dans le rail : 48 px − 2 × 8 px de marge = 32 px de bouton, icône de 16 px → 8 px de chaque côté. */
+.nav-item { display: flex; align-items: center; gap: 0.7rem; width: 100%; height: 32px; padding: 0 8px; border: none; border-radius: var(--radius-sm); background: transparent; color: var(--muted); font: inherit; font-size: 0.84rem; font-weight: 450; text-align: left; cursor: pointer; transition: background 0.12s, color 0.12s; }
+.nav-item svg { width: 16px; height: 16px; flex: none; }
+.nav-item:hover { background: var(--surface-2); color: var(--text); text-decoration: none; }
+.nav-item.active, .nav-item.active:hover { background: var(--surface-3); color: var(--text); font-weight: 500; }
 .nav-item:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
 .nav-item.disabled { opacity: 0.45; pointer-events: none; }
 .sidebar-foot { margin-top: auto; padding-top: 0.5rem; border-top: 1px solid var(--border); display: flex; flex-direction: column; gap: 2px; }
-.user-chip { display: flex; align-items: center; gap: 0.6rem; padding: 0.3rem 0.15rem; border-radius: var(--radius); }
-.user-chip .grow { min-width: 0; }
-.topbar { position: sticky; top: 0; z-index: 50; height: var(--topbar-h); display: flex; align-items: center; gap: 0.75rem; padding: 0 1.5rem; background: rgba(28, 28, 28, 0.85); backdrop-filter: blur(10px); border-bottom: 1px solid var(--border); }
+.sidebar-control .nav-item { width: 32px; }
+
+/* Menus déroulants (contrôle de la barre latérale, compte) */
+.dropdown { position: relative; }
+.menu { position: absolute; z-index: 80; min-width: 190px; padding: 0.3rem; background: var(--surface); border: 1px solid var(--border-strong); border-radius: var(--radius); box-shadow: 0 12px 32px rgba(0, 0, 0, 0.45); animation: fade 0.12s var(--ease); }
+.menu-up { position: fixed; left: 0.5rem; bottom: 3rem; }
+.menu-right { right: 0; top: calc(100% + 6px); min-width: 230px; }
+.menu-label { padding: 0.35rem 0.55rem 0.3rem; font-size: 0.72rem; color: var(--muted); }
+.menu-head { padding: 0.45rem 0.55rem; min-width: 0; }
+.menu-sep { height: 1px; margin: 0.25rem -0.3rem; background: var(--border); }
+.menu-item { display: flex; align-items: center; gap: 0.5rem; width: 100%; height: 30px; padding: 0 0.55rem; border: none; border-radius: var(--radius-sm); background: transparent; color: var(--text-2); font: inherit; font-size: 0.82rem; text-align: left; cursor: pointer; }
+.menu-item:hover, .menu-item:focus-visible { background: var(--surface-3); color: var(--text); outline: none; }
+.menu-item svg { width: 15px; height: 15px; flex: none; }
+.menu-check { width: 15px; display: inline-flex; color: var(--text); }
+
+/* Marque (pages de connexion et d'accueil) et logo */
+.brand { display: flex; align-items: center; gap: 0.65rem; height: 40px; padding: 0 0.4rem; margin-bottom: 0.5rem; color: var(--text); font-weight: 600; font-size: 0.98rem; letter-spacing: -0.01em; white-space: nowrap; }
+.brand:hover { text-decoration: none; }
+/* Logo officiel (image) : carré aux coins déjà arrondis, aucun fond ajouté. */
+.logo { width: 26px; height: 26px; display: block; flex: none; object-fit: contain; user-select: none; }
+
+/* En-tête pleine largeur */
+.topbar { position: sticky; top: 0; z-index: 50; height: var(--topbar-h); display: flex; align-items: center; gap: 0.75rem; padding: 0 1rem 0 0.75rem; background: var(--bg-elev); border-bottom: 1px solid var(--border); }
+.top-brand { display: inline-flex; align-items: center; flex: none; }
+.top-brand .logo { width: 26px; height: 26px; }
 .crumbs { display: flex; align-items: center; gap: 0.4rem; font-size: 0.84rem; color: var(--muted); min-width: 0; flex: 1; }
 .crumbs a { color: var(--muted); }
 .crumbs a:hover { color: var(--text); text-decoration: none; }
@@ -299,36 +335,99 @@ kbd { background: var(--surface-3); border: 1px solid var(--border-strong); bord
 .crumb-switch select:hover { border-color: var(--border-strong); background: var(--surface-2); }
 .crumb-switch svg { position: absolute; right: 0.55rem; width: 13px; height: 13px; color: var(--muted); pointer-events: none; }
 .avatar { width: 30px; height: 30px; border-radius: 50%; background: var(--surface-3); border: 1px solid var(--border-strong); display: grid; place-items: center; font-weight: 600; font-size: 0.78rem; color: var(--text); flex: none; text-transform: uppercase; }
-.main-col { min-width: 0; display: flex; flex-direction: column; }
+.avatar-btn { display: inline-flex; padding: 0; border: none; border-radius: 50%; background: transparent; cursor: pointer; }
+.avatar-btn .avatar { width: 28px; height: 28px; font-size: 0.72rem; }
+.avatar-btn:hover .avatar, .avatar-btn[aria-expanded="true"] .avatar { border-color: var(--muted); }
+.avatar-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .conn { display: inline-flex; align-items: center; gap: 0.4rem; font-size: 0.76rem; color: var(--muted); }
 .conn .dot { color: var(--ok); box-shadow: 0 0 0 3px var(--ok-soft); }
 .conn.down .dot { color: var(--err); box-shadow: 0 0 0 3px var(--err-soft); }
 .menu-btn { display: none; }
-.content { padding: 1.75rem 1.5rem 3rem; width: 100%; max-width: 1240px; margin: 0 auto; }
+.content { padding: 1.75rem 1.5rem 3rem; width: 100%; max-width: 1240px; margin: 0 auto; min-width: 0; }
 .content.full { max-width: none; padding: 1.25rem 1.5rem 1.5rem; }
 .page-head { display: flex; align-items: flex-end; justify-content: space-between; gap: 1rem; margin-bottom: 1.4rem; flex-wrap: wrap; }
 .page-head h1 { font-size: 1.45rem; }
 .page-head p { color: var(--muted); margin-top: 0.3rem; max-width: 680px; }
 
+/* ---- Vue d'ensemble (accueil de projet façon Supabase) ---- */
+.ov-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 1rem; flex-wrap: wrap; margin-bottom: 1.5rem; }
+.ov-head h1 { font-size: 1.5rem; min-width: 0; }
+.ov-head .badge .dot { width: 6px; height: 6px; }
+.ov-meta { display: flex; flex-wrap: wrap; gap: 0.4rem; margin-top: 0.7rem; }
+.ov-pill { display: inline-flex; align-items: center; gap: 0.35rem; height: 26px; padding: 0 0.6rem; border: 1px solid var(--border); border-radius: 999px; background: var(--surface); font-size: 0.76rem; color: var(--text-2); }
+.ov-pill svg { color: var(--muted); }
+.ov-pill .btn { height: 20px; width: 20px; margin-right: -0.35rem; }
+.ov-start { margin-bottom: 1.5rem; overflow: hidden; }
+.ov-steps { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.ov-steps li { display: grid; grid-template-columns: 22px minmax(0, 1fr); align-items: start; gap: 0.35rem 0.65rem; padding: 1rem 1.15rem; border-left: 1px solid var(--border); }
+.ov-steps li:first-child { border-left: none; }
+.ov-steps li .btn { grid-column: 2; justify-self: start; margin-top: 0.5rem; }
+.ov-check { width: 20px; height: 20px; border-radius: 50%; border: 1.5px solid var(--border-strong); display: grid; place-items: center; margin-top: 1px; }
+.ov-check svg { width: 12px; height: 12px; }
+.ov-steps li.done .ov-check { background: var(--accent); border-color: var(--accent); color: #0b2b1d; }
+.ov-steps li.done .ov-step-title { color: var(--muted); text-decoration: line-through; text-decoration-color: var(--faint); }
+.ov-step-title { font-size: 0.86rem; font-weight: 500; }
+.ov-section-head { display: flex; align-items: flex-end; justify-content: space-between; gap: 1rem; flex-wrap: wrap; margin-bottom: 0.8rem; }
+.ov-section-head h2 { font-size: 1.05rem; }
+.ov-section-head p { margin-top: 0.2rem; }
+.ov-card { padding: 1rem 1.15rem 0.9rem; display: flex; flex-direction: column; min-width: 0; }
+.ov-card-head { display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; }
+.ov-card-head a { color: var(--muted); }
+.ov-card-head a:hover { color: var(--text); text-decoration: none; }
+.ov-empty { margin-top: auto; padding: 2.5rem 0; text-align: center; }
+/* Histogramme en colonnes : colonnes fines (≤ 24 px), bout arrondi de 4 px, 2 px d'écart entre segments,
+   grille et axes discrets. Infobulle au survol et au focus ; tableau équivalent pour les lecteurs d'écran. */
+.chart { position: relative; margin-top: 1rem; }
+.chart-plot { position: relative; border-bottom: 1px solid var(--border-strong); border-top: 1px solid var(--border); }
+.chart-max { position: absolute; top: -0.55rem; right: 0; padding-left: 0.35rem; background: var(--surface); font-size: 0.68rem; color: var(--faint); font-variant-numeric: tabular-nums; z-index: 1; }
+.chart-cols { position: absolute; inset: 0; display: flex; align-items: stretch; }
+.chart-slot { flex: 1; min-width: 0; display: flex; align-items: flex-end; justify-content: center; padding: 0 1px; border-radius: 4px 4px 0 0; outline: none; cursor: default; }
+.chart-slot.on, .chart-slot:focus-visible { background: rgba(255, 255, 255, 0.04); }
+.chart-slot:focus-visible { box-shadow: inset 0 0 0 1px var(--accent); }
+.chart-stack { width: min(24px, 70%); display: flex; flex-direction: column-reverse; gap: 2px; }
+.chart-seg { display: block; width: 100%; }
+.chart-stack .chart-seg:last-child { border-radius: 4px 4px 0 0; }
+.chart-zero { display: block; height: 2px; width: 100%; background: var(--surface-3); border-radius: 1px; }
+.chart-slot.on .chart-seg { filter: brightness(1.15); }
+.chart-axis { display: flex; justify-content: space-between; margin-top: 0.35rem; font-size: 0.68rem; color: var(--faint); }
+.chart-tip { position: absolute; bottom: calc(100% + 8px); z-index: 5; width: max-content; min-width: 170px; max-width: min(260px, 100%); padding: 0.5rem 0.6rem; background: var(--surface-2); border: 1px solid var(--border-strong); border-radius: var(--radius); box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4); pointer-events: none; font-size: 0.74rem; }
+.chart-tip-head { color: var(--muted); margin-bottom: 0.3rem; white-space: nowrap; }
+.chart-tip-row { display: grid; grid-template-columns: 8px auto minmax(0, 1fr); align-items: baseline; gap: 0.45rem; line-height: 1.45; padding: 0.1rem 0; }
+.chart-tip-row strong { color: var(--text); font-variant-numeric: tabular-nums; }
+.chart-tip-row .swatch { align-self: center; }
+.swatch { display: inline-block; width: 8px; height: 8px; border-radius: 2px; flex: none; }
+.chart-legend { list-style: none; display: flex; gap: 0.9rem; margin: 0.55rem 0 0; padding: 0; font-size: 0.72rem; color: var(--muted); }
+.chart-legend li { display: inline-flex; align-items: center; gap: 0.35rem; }
+.hbars { list-style: none; margin: 1rem 0 0; padding: 0; display: flex; flex-direction: column; gap: 0.7rem; }
+.hbar-label { display: flex; justify-content: space-between; gap: 0.75rem; font-size: 0.76rem; color: var(--text-2); }
+.hbar-label strong { color: var(--text); font-weight: 600; font-variant-numeric: tabular-nums; }
+.hbar-track { height: 6px; margin-top: 0.3rem; border-radius: 3px; background: var(--surface-3); }
+.hbar-track span { display: block; height: 100%; min-width: 4px; border-radius: 3px; background: var(--info); }
+@media (max-width: 1100px) { .ov-steps { grid-template-columns: repeat(2, minmax(0, 1fr)); } .ov-steps li:nth-child(3) { border-left: none; } .ov-steps li:nth-child(n + 3) { border-top: 1px solid var(--border); } .ov-usage > :last-child { grid-column: 1 / -1; } }
+@media (max-width: 720px) { .ov-steps { grid-template-columns: minmax(0, 1fr); } .ov-steps li { border-left: none; } .ov-steps li + li { border-top: 1px solid var(--border); } .ov-usage > :last-child { grid-column: auto; } .ov-head .row { width: 100%; } }
+
+/* Mobile et petite tablette : la barre latérale devient un tiroir complet (tous modes confondus). */
 @media (max-width: 960px) {
-  .app { grid-template-columns: minmax(0, 1fr); }
-  .sidebar, .sidebar:hover, .sidebar:focus-within { position: fixed; left: 0; top: 0; bottom: 0; width: min(280px, 86vw); transform: translateX(-100%); transition: transform 0.22s var(--ease); box-shadow: 20px 0 50px rgba(0, 0, 0, 0.45); }
-  .rail-text { opacity: 1; }
+  .app-body, .app[data-sidebar] .app-body { grid-template-columns: minmax(0, 1fr); }
+  .sidebar-slot { position: static; }
+  .app[data-sidebar] .sidebar, .app[data-sidebar] .sidebar:hover, .app[data-sidebar] .sidebar:focus-within { position: fixed; left: 0; top: 0; bottom: 0; height: auto; width: min(280px, 86vw); z-index: 60; padding-top: 0.75rem; transform: translateX(-100%); transition: transform 0.22s var(--ease); box-shadow: 20px 0 50px rgba(0, 0, 0, 0.45); clip-path: none; border-right-color: var(--border); }
+  .app[data-sidebar] .sidebar::after { display: none; }
+  .app[data-sidebar] .sidebar.open { transform: none; }
+  .app[data-sidebar] .rail-text { opacity: 1; transform: none; }
+  .sidebar-control { display: none; }
   .crumb-switch select { max-width: 150px; }
-  .sidebar.open { transform: none; }
-  .menu-btn { display: inline-flex; }
-  .topbar { padding: 0 0.9rem; }
+  .menu-btn { display: inline-flex; margin-left: -0.35rem; }
+  .topbar { padding: 0 0.75rem; gap: 0.6rem; }
   .content { padding: 1.25rem 1rem 2.5rem; }
   .content.full { padding: 1rem; }
   .hide-md { display: none !important; }
 }
-/* Écrans tactiles larges (tablette en paysage, ordinateur tactile) : pas de survol pour déployer le rail,
-   donc la barre latérale reste ouverte à 240 px avec ses libellés, le nom du compte et la déconnexion.
-   Les écrans avec souris (survol disponible) et le menu mobile (≤ 960 px) ne sont pas concernés. */
+/* Écrans tactiles larges : pas de survol, donc le mode « Déployée au survol » se comporte comme « Déployée ». */
 @media (hover: none) and (min-width: 961px) {
-  .app { grid-template-columns: var(--sidebar-w) minmax(0, 1fr); }
-  .sidebar, .sidebar:hover, .sidebar:focus-within { width: var(--sidebar-w); box-shadow: none; transition: none; }
-  .rail-text { opacity: 1; transition: none; }
+  .app[data-sidebar="expandable"] .app-body { grid-template-columns: var(--sidebar-w) minmax(0, 1fr); }
+  .app[data-sidebar="expandable"] .sidebar, .app[data-sidebar="expandable"] .sidebar:hover { width: var(--sidebar-w); box-shadow: none; transition: none; clip-path: none; border-right-color: var(--border); }
+  .app[data-sidebar="expandable"] .sidebar::after { display: none; }
+  .app[data-sidebar="expandable"] .rail-text { opacity: 1; transform: none; transition: none; }
 }
 @media (max-width: 520px) { .hide-xs { display: none !important; } .page-head h1 { font-size: 1.25rem; } }
 
