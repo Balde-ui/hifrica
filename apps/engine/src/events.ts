@@ -1,10 +1,15 @@
 // Propriétaire : Dev B
-// Publication des événements temps réel (téléphone simulé, tableau de bord).
+// Publication des événements temps réel (téléphone simulé, tableau de bord) sur le canal Valkey du projet.
 import { projectChannel, type HifricaEvent } from "@hifrica/shared";
 import type { FastifyBaseLogger } from "fastify";
+import { runCommand } from "./valkey.js";
 
-/** Publie un événement sur le canal du projet. */
+/**
+ * Publie un événement sur project:{id}:events. Lève si Valkey est injoignable ou n'est pas configuré :
+ * les appelants (ex. startPaymentSession) attrapent déjà l'erreur pour ne jamais faire échouer la requête HTTP.
+ */
 export async function publishEvent(event: HifricaEvent, log: Pick<FastifyBaseLogger, "info"> = console): Promise<void> {
-  // TODO(B1) publier sur Valkey.
-  log.info({ channel: projectChannel(event.projectId), type: event.type }, "événement publié (bouchon)");
+  const channel = projectChannel(event.projectId);
+  await runCommand((c) => c.publish(channel, JSON.stringify(event)));
+  log.info({ channel, type: event.type }, "événement publié");
 }
