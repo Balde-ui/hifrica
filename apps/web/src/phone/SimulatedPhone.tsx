@@ -52,20 +52,25 @@ interface EngineSendResult {
   body: unknown;
 }
 
-function engineErrorMessage(body: unknown): string {
+function engineErrorCode(body: unknown): string | null {
   if (body && typeof body === "object" && "error" in body) {
     const code = (body as { error: unknown }).error;
-    if (typeof code === "string") {
-      const KNOWN: Record<string, string> = {
-        invalid_test_key: "Clé de test invalide ou révoquée.",
-        simulator_not_found: "Simulateur USSD introuvable.",
-        input_too_long: "Réponse trop longue (182 caractères maximum).",
-        stream_unavailable: "Service temporairement indisponible.",
-      };
-      return KNOWN[code] ?? `Erreur du simulateur (${code}).`;
-    }
+    if (typeof code === "string") return code;
   }
-  return "Erreur inattendue du simulateur USSD.";
+  return null;
+}
+
+function engineErrorMessage(body: unknown): string {
+  const code = engineErrorCode(body);
+  if (code === null) return "Erreur inattendue du simulateur USSD.";
+  const KNOWN: Record<string, string> = {
+    invalid_test_key: "Clé de test invalide ou révoquée.",
+    simulator_not_found: "Simulateur USSD introuvable.",
+    input_too_long: "Réponse trop longue (182 caractères maximum).",
+    stream_unavailable: "Service temporairement indisponible.",
+    session_not_found: "Session expirée, recomposez le code.",
+  };
+  return KNOWN[code] ?? `Erreur du simulateur (${code}).`;
 }
 
 type PinStep = { sessionId: string } | null;
@@ -166,6 +171,9 @@ export function SimulatedPhone({ projectId, testKey, ussdSimulator, ussdCode }: 
       });
       if (r.status < 200 || r.status >= 300) {
         flash(engineErrorMessage(r.body));
+        // Session expirée côté moteur : revenir à l'écran de composition plutôt que de laisser
+        // l'utilisateur retaper dans une session qui n'existe plus.
+        if (engineErrorCode(r.body) === "session_not_found") setUssd(null);
         return;
       }
       const body = r.body as UssdState;
@@ -254,10 +262,12 @@ export function SimulatedPhone({ projectId, testKey, ussdSimulator, ussdCode }: 
 
         {!payment && !ussd && (
           <div className="phone-card phone-idle">
-            {ussdSimulator ? (
-              <button className="btn btn-ghost btn-sm" disabled={busy || !testKey} onClick={() => void dialUssd()}>
+            {ussdSimulator && testKey ? (
+              <button className="btn btn-ghost btn-sm" disabled={busy} onClick={() => void dialUssd()}>
                 Composer {ussdCode ?? "le code USSD"}
               </button>
+            ) : ussdSimulator ? (
+              <span className="muted">Collez votre clé de test pour composer {ussdCode ?? "le code USSD"}</span>
             ) : (
               <span className="muted">En attente d'un événement…</span>
             )}

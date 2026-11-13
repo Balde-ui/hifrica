@@ -11,6 +11,8 @@ import { Alert, Empty, Icon, JsonView, Skeleton, Spinner, StatusCode, useToast }
 
 const SIMULATOR = "paiement-mobile-generique";
 const SCENARIO = "solde-insuffisant";
+const USSD_SIMULATOR = "mobile-money-ussd";
+const USSD_CODE = "*123#";
 
 const PRODUCTS = [
   { id: "pagne", name: "Pagne wax 6 yards", price: 15000, emoji: "🧵", bg: "#f6efe4" },
@@ -215,7 +217,9 @@ export function DemoShop() {
           </div>
         </div>
 
-        {active && <SimulatedPhone projectId={active.id} />}
+        {active && (
+          <SimulatedPhone projectId={active.id} testKey={key.trim()} ussdSimulator={USSD_SIMULATOR} ussdCode={USSD_CODE} />
+        )}
       </div>
 
       {(result || paying) && (
