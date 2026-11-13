@@ -8,6 +8,7 @@ import { registerPlatformRoutes, seedSimulators } from "./platform.js";
 import { registerPhoneAction } from "./phone.js";
 import { registerSse } from "./sse.js";
 import { registerValkey } from "./valkey.js";
+import { registerWebhookDeliveryRoutes } from "./webhooks.js";
 
 // trustProxy : on ne fait confiance qu'au premier saut (Caddy) ; req.ip est alors l'IP du client lue dans X-Forwarded-For.
 const app = Fastify({ logger: true, bodyLimit: 128 * 1024, trustProxy: (_address, hop) => hop === 0 });
@@ -77,6 +78,7 @@ async function start() {
       publicEngineUrl: process.env.ENGINE_PUBLIC_URL ?? (process.env.SIM_DOMAIN ? `https://${process.env.SIM_DOMAIN}` : "http://localhost:4000"),
       simulatorsDir: process.env.SIMULATORS_DIR ?? DEFAULT_SIMULATORS_DIR,
     });
+    registerWebhookDeliveryRoutes(app, { db }); // A5 : historique des webhooks
   } else {
     app.log.warn("DATABASE_URL absente : migrations non exécutées (développement local sans base).");
   }

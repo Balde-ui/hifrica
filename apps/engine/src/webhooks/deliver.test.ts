@@ -195,8 +195,7 @@ describe("classification relance / pas de relance", () => {
 
 describe("processDelivery", () => {
   const deps = (path: string, log: WebhookLogger, extra: Record<string, unknown> = {}) => ({
-    url: `${base}${path}?token=jeton-dans-url`,
-    secret: SECRET,
+    resolve: async () => ({ ok: true as const, url: `${base}${path}?token=jeton-dans-url`, secret: SECRET }),
     allowPrivate: true,
     log,
     ...extra,
@@ -268,9 +267,11 @@ describe("processDelivery", () => {
 
   it("sans URL : rien n'est envoyé ; sans secret : abandon sans envoi", async () => {
     const { log, lines } = captureLogger();
-    assert.equal(await processDelivery(job(), 1, { url: undefined, secret: SECRET, allowPrivate: true, log }), null);
-    assert.equal(lines[0]?.msg, "aucune URL de webhook : rien n'est envoyé");
-    await assert.rejects(processDelivery(job(), 1, { url: `${base}/200`, secret: undefined, allowPrivate: true, log }), UnrecoverableError);
+    const noUrl = async () => ({ ok: false as const, outcome: "no_url" as const, host: null });
+    const noSecret = async () => ({ ok: false as const, outcome: "no_secret" as const, host: "127.0.0.1" });
+    assert.equal(await processDelivery(job(), 1, { resolve: noUrl, allowPrivate: true, log }), null);
+    assert.equal(lines[0]?.msg, "aucune URL de webhook pour ce projet : rien n'est envoyé");
+    await assert.rejects(processDelivery(job(), 1, { resolve: noSecret, allowPrivate: true, log }), UnrecoverableError);
     assert.equal(received.length, 0);
   });
 

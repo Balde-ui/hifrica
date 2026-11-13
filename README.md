@@ -9,7 +9,7 @@ Projet présenté au concours CADEV 2026.
 - **Application** : https://app.hifrica.site
 - **Simulateurs** : https://sim.hifrica.site
 
-> **État du projet.** Le moteur HTTP, les scénarios d'échec, les comptes, les projets, les clés, la console, le catalogue, l'éditeur et l'assistant IA fonctionnent. Sont **en cours** : le téléphone simulé (confirmation d'un paiement par le client), le flux temps réel (SSE) de la console, l'exécution des simulateurs USSD et SMS, et les webhooks configurés par projet (URL et secret propres à chaque projet).
+> **État du projet.** Le moteur HTTP, les scénarios d'échec, les comptes, les projets, les clés, la console, le catalogue, l'éditeur et l'assistant IA fonctionnent. Sont **en cours** : le téléphone simulé (confirmation d'un paiement par le client), le flux temps réel (SSE) de la console et l'exécution des simulateurs USSD et SMS.
 
 ---
 
@@ -179,7 +179,7 @@ Le moteur prévient le serveur de votre app par un `POST` JSON signé :
 - **sans `on`** : après la réponse, au bout du délai `after` (30 s au plus) ;
 - **avec `on: phone.confirm`** ou **`on: phone.reject`** : quand le client confirme ou refuse sur le téléphone simulé (le téléphone est **en cours**).
 
-**Destination.** Pour l'instant, les webhooks partent vers une URL et sont signés avec un secret définis pour tout le serveur. L'URL et le secret propres à chaque projet (onglet **Paramètres**) seront utilisés dès la fin de ce travail, **en cours**.
+**Destination.** Chaque projet a son URL de webhook et son secret de signature (onglet **Paramètres**). Ils sont lus au moment de chaque envoi : une URL modifiée s'applique aux envois suivants, relances comprises. Sans URL, rien n'est envoyé. Le même onglet affiche l'**historique des webhooks** : une ligne par tentative, avec la date, l'événement, le résultat, le code HTTP, la durée et l'hôte de destination (jamais l'URL complète).
 
 ### Format
 
@@ -303,9 +303,9 @@ curl -i -X POST localhost:4000/paiement-mobile-generique/v1/checkout \
    | Service | Variables |
    | --- | --- |
    | API | `DATABASE_URL`, `VALKEY_URL`, `BETTER_AUTH_SECRET`, `BETTER_AUTH_URL` (adresse de l'interface, `http://localhost:5173`), `WEBHOOK_SECRET_KEYS` (création de projets), `ENGINE_INTERNAL_URL=http://localhost:4000` (envoi de requêtes depuis la console) |
-   | Moteur | `DATABASE_URL`, `VALKEY_URL`, `SIMULATORS_DIR` |
+   | Moteur | `DATABASE_URL`, `VALKEY_URL`, `SIMULATORS_DIR`, `WEBHOOK_SECRET_KEYS` (la même que l'API : déchiffre le secret de chaque projet) |
    | Assistant IA (facultatif) | `AI_GENERATION_ENABLED=true` et `DEEPSEEK_API_KEY` ou `GEMINI_API_KEY` |
-   | Webhooks (facultatif) | `WEBHOOK_TEST_URL`, `WEBHOOK_SIGNING_SECRET`, `WEBHOOK_ALLOW_PRIVATE=true` et `NODE_ENV=development` pour viser `localhost` |
+   | Webhooks vers `localhost` (facultatif) | `WEBHOOK_ALLOW_PRIVATE=true` et `NODE_ENV=development` sur le moteur ; l'URL se règle dans l'onglet **Paramètres** du projet |
 
 3. Lancez les trois services, chacun dans son terminal :
 
@@ -315,7 +315,9 @@ curl -i -X POST localhost:4000/paiement-mobile-generique/v1/checkout \
    pnpm dev:web                                         # http://localhost:5173 (relaie /api vers le port 3000)
    ```
 
-Pour voir arriver des webhooks : `WEBHOOK_SIGNING_SECRET=<secret-local> node scripts/webhook-receiver.mjs` écoute sur le port 4999, affiche les en-têtes reçus et vérifie la signature.
+Pour voir arriver des webhooks : mettez `http://localhost:4999/webhook` comme URL du projet, puis `WEBHOOK_SIGNING_SECRET=<secret du projet> node scripts/webhook-receiver.mjs`. Le récepteur écoute sur le port 4999, affiche les en-têtes reçus et vérifie la signature.
+
+Le moteur seul, sans base, utilise deux bouchons à la place de l'URL et du secret du projet : `WEBHOOK_TEST_URL` et `WEBHOOK_SIGNING_SECRET`. Ils sont ignorés dès qu'une base est configurée, et toujours en production.
 
 ---
 

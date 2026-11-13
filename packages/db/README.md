@@ -11,14 +11,14 @@ Les contrats partagés avec A et B (et leur état de validation) sont dans [`C0_
 packages/db/
 ├── auth.cli.mjs              # config Better Auth réservée au CLI de génération (sans base, sans secret)
 ├── drizzle.config.ts         # drizzle-kit lit le schéma COMPILÉ (dist/schema/index.js)
-├── migrations/               # SQL versionné : 0000_init (généré), 0001_users_role_check (--custom), 0002_request_logs_session_id (généré, D14)
+├── migrations/               # SQL versionné : 0000_init (généré), 0001_users_role_check (--custom), 0002_request_logs_session_id (généré, D14), 0003_webhook_deliveries (généré, A5)
 ├── scripts/
 │   ├── auth-schema.mjs       # generate | check : schéma Better Auth reproductible + contrôle de dérive
 │   └── check-migration-journal.mjs  # ordre strict des migrations, fichiers orphelins, migrations fusionnées intactes
 ├── src/
 │   ├── auth/options.ts       # options Better Auth qui définissent le schéma (source unique, CLI + API)
 │   ├── schema/auth.ts        # GÉNÉRÉ : users, sessions, accounts, verifications — ne pas modifier
-│   ├── schema/*.ts           # projects, api_keys, simulators, simulator_versions, project_simulators, request_logs
+│   ├── schema/*.ts           # projects, api_keys, simulators, simulator_versions, project_simulators, request_logs, webhook_deliveries
 │   ├── client.ts             # createPool (sessions en UTC) / createDb
 │   ├── errors.ts             # erreurs sûres : DbOperationError, toSafeDbError, safeDbCall, InvalidInputError
 │   ├── validate.ts           # isUuid, méthode HTTP, error_code, slug (alignés sur les CHECK)

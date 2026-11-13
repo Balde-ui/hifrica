@@ -4,8 +4,10 @@ import { request as httpRequest, type IncomingMessage } from "node:http";
 import { request as httpsRequest } from "node:https";
 import { UnrecoverableError } from "bullmq";
 import type { FastifyBaseLogger } from "fastify";
+import type { DeliveryRecord } from "./history.js";
 import { signWebhook } from "./signature.js";
 import { checkWebhookUrl, createSafeLookup, SsrfBlockedError } from "./ssrf.js";
+import type { WebhookTarget } from "./target.js";
 
 export type Outcome = "success" | "http_error" | "network_error" | "timeout" | "blocked";
 
@@ -120,10 +122,10 @@ export function sendWebhook(opts: SendOptions): Promise<DeliveryResult> {
 }
 
 export interface ProcessDeps {
-  /** URL de destination (TODO(A5) : projects.webhook_url) ; absente = rien n'est envoyé. */
-  url: string | undefined;
-  /** Secret de signature (TODO(A5) : secret par projet) ; absent = rien n'est envoyé. */
-  secret: string | undefined;
+  /** URL et secret du projet, lus à chaque tentative (voir target.ts). Lève si la base est injoignable. */
+  resolve: (projectId: string) => Promise<WebhookTarget>;
+  /** Enregistre la tentative dans webhook_deliveries (voir history.ts). Une erreur n'est jamais propagée. */
+  record?: (row: DeliveryRecord) => Promise<void>;
   allowPrivate: boolean;
   log: WebhookLogger;
   send?: (opts: SendOptions) => Promise<DeliveryResult>;
@@ -143,18 +145,43 @@ export async function processDelivery(data: WebhookJobData, attempt: number, dep
     event: data.event,
     attempt,
   };
-  if (!deps.url) {
-    deps.log.info(base, "aucune URL de webhook : rien n'est envoyé");
-    return null;
-  }
-  if (!deps.secret) {
-    deps.log.error(base, "WEBHOOK_SIGNING_SECRET absent : webhook non signé, abandon");
-    throw new UnrecoverableError("signing_secret_missing");
+  // Historique : écrit sans attendre ; une erreur d'insertion est loguée, jamais propagée à l'envoi.
+  const record = (fields: Pick<DeliveryRecord, "outcome" | "statusCode" | "durationMs" | "destinationHost">) => {
+    if (!deps.record) return;
+    const row: DeliveryRecord = {
+      deliveryId: data.deliveryId,
+      projectId: data.projectId,
+      requestId: data.requestId,
+      event: data.event,
+      attempt,
+      ...fields,
+    };
+    const onError = (err: unknown) =>
+      deps.log.warn({ ...base, reason: err instanceof Error ? err.message : "error" }, "historique du webhook non enregistré");
+    try {
+      deps.record(row).catch(onError);
+    } catch (err) {
+      onError(err);
+    }
+  };
+
+  // Destination lue maintenant : une URL ou un secret modifiés s'appliquent dès cette tentative.
+  // Base injoignable : resolve lève, BullMQ relance plus tard (rien n'est envoyé ni enregistré).
+  const target = await deps.resolve(data.projectId);
+  if (!target.ok) {
+    record({ outcome: target.outcome, statusCode: null, durationMs: 0, destinationHost: target.host });
+    if (target.outcome === "no_url") {
+      // Cas normal (projet sans webhook) : le job se termine, sans relance ni erreur.
+      deps.log.info({ ...base, outcome: "no_url" }, "aucune URL de webhook pour ce projet : rien n'est envoyé");
+      return null;
+    }
+    deps.log.error({ ...base, outcome: "no_secret", host: target.host }, "secret de signature indisponible : webhook non envoyé, abandon");
+    throw new UnrecoverableError("no_secret");
   }
 
   const timestamp = Math.floor((deps.now ?? Date.now)() / 1000); // recalculé à chaque tentative
   const result = await (deps.send ?? sendWebhook)({
-    url: deps.url,
+    url: target.url,
     rawBody: data.rawBody,
     allowPrivate: deps.allowPrivate,
     timeoutMs: deps.timeoutMs,
@@ -165,11 +192,16 @@ export async function processDelivery(data: WebhookJobData, attempt: number, dep
       "X-Hifrica-Delivery": data.deliveryId,
       "X-Hifrica-Request-Id": data.requestId,
       "X-Hifrica-Attempt": String(attempt),
-      "X-Hifrica-Signature": signWebhook(deps.secret, timestamp, data.rawBody),
+      "X-Hifrica-Signature": signWebhook(target.secret, timestamp, data.rawBody),
     },
   });
 
-  // TODO(A5) : insérer une ligne par tentative dans webhook_deliveries (outcome, status_code, duration_ms...).
+  record({
+    outcome: result.outcome,
+    statusCode: result.statusCode,
+    durationMs: result.durationMs,
+    destinationHost: result.host || null,
+  });
   const entry = {
     ...base,
     outcome: result.outcome,

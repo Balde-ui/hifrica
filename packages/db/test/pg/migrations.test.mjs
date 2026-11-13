@@ -171,4 +171,50 @@ describe("migrations sur une base PostgreSQL vierge", { skip: SKIP_REASON }, () 
       await db.drop();
     }
   });
+
+  test("base déjà migrée jusqu'à 0002 (avec données) : seule 0003 (webhook_deliveries) est appliquée, données conservées", async () => {
+    const db = await createFreshDatabase();
+    const partial = mkdtempSync(join(tmpdir(), "hifrica-migrations-0002-"));
+    try {
+      cpSync(MIGRATIONS_FOLDER, partial, { recursive: true });
+      const partialJournal = { ...journal, entries: journal.entries.slice(0, 3) };
+      assert.deepEqual(partialJournal.entries.map((e) => e.tag), ["0000_init", "0001_users_role_check", "0002_request_logs_session_id"]);
+      writeFileSync(join(partial, "meta", "_journal.json"), JSON.stringify(partialJournal));
+      await runMigrations({ databaseUrl: db.url, migrationsFolder: partial });
+
+      const keyring = parseWebhookSecretKeyring(`v1:${randomBytes(32).toString("base64")}`);
+      const projectId = randomUUID();
+      await withClient(db.url, async (c) => {
+        assert.equal((await appliedMigrations(c)).length, 3);
+        assert.ok(!(await publicTables(c)).includes("webhook_deliveries"), "table absente avant 0003");
+        const { rows: u } = await c.query(
+          "INSERT INTO users (name, email, updated_at) VALUES ('M', $1, now()) RETURNING id",
+          [`mig3-${randomUUID()}@example.test`],
+        );
+        await c.query(
+          "INSERT INTO projects (id, owner_id, name, webhook_url, webhook_secret_enc) VALUES ($1, $2, 'P', 'https://hooks.exemple.test/w', $3)",
+          [projectId, u[0].id, encryptWebhookSecret(generateWebhookSecret(), projectId, keyring)],
+        );
+      });
+
+      await runMigrations({ databaseUrl: db.url });
+
+      await withClient(db.url, async (c) => {
+        assert.equal((await appliedMigrations(c)).length, MIGRATION_COUNT, "0003 appliquée une seule fois");
+        assert.deepEqual(await publicTables(c), EXPECTED_TABLES);
+        const { rows: kept } = await c.query("SELECT webhook_url FROM projects WHERE id = $1", [projectId]);
+        assert.equal(kept[0].webhook_url, "https://hooks.exemple.test/w", "le projet existant est conservé");
+        await c.query(
+          `INSERT INTO webhook_deliveries (delivery_id, project_id, event, attempt, outcome, status_code, duration_ms, destination_host)
+           VALUES ($1, $2, 'checkout.completed', 1, 'success', 200, 5, 'hooks.exemple.test')`,
+          [randomUUID(), projectId],
+        );
+      });
+      await runMigrations({ databaseUrl: db.url });
+      await withClient(db.url, async (c) => assert.equal((await appliedMigrations(c)).length, MIGRATION_COUNT, "redémarrage sans effet"));
+    } finally {
+      rmSync(partial, { recursive: true, force: true });
+      await db.drop();
+    }
+  });
 });

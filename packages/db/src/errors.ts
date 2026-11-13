@@ -66,6 +66,9 @@ export const DB_OPERATIONS = [
   "resolve_api_key",
   "touch_api_key",
   "get_webhook_target",
+  // A5 : historique des webhooks (écrit par le moteur, lu par la console).
+  "insert_webhook_delivery",
+  "list_webhook_deliveries",
   "get_simulator_for_project",
   // C2 / C4 / C5 : routes de la plateforme (comptes, projets, clés, console, catalogue).
   "get_project_for_owner",
