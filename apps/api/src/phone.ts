@@ -13,8 +13,8 @@ import {
   type PhoneRejectEvent,
   type PhoneSession,
 } from "@hifrica/shared";
-import type { FastifyInstance } from "fastify";
-import { assertProjectOwner, requireUser } from "./auth.js";
+import type { FastifyInstance, FastifyRequest } from "fastify";
+import { assertProjectOwner, requireUser, type AuthenticatedUser } from "./auth.js";
 import { runCommand } from "./valkey.js";
 
 const MAX_REASON_LENGTH = 64;
@@ -28,7 +28,14 @@ interface ActionBody {
   reason?: unknown;
 }
 
-export function registerPhoneAction(app: FastifyInstance): void {
+export interface PhoneActionDeps {
+  requireUser: (req: FastifyRequest) => Promise<AuthenticatedUser | null>;
+  assertProjectOwner: (user: AuthenticatedUser, projectId: string) => Promise<boolean>;
+}
+
+const defaultDeps: PhoneActionDeps = { requireUser, assertProjectOwner };
+
+export function registerPhoneAction(app: FastifyInstance, deps: PhoneActionDeps = defaultDeps): void {
   app.post<{ Params: { session: string }; Body: ActionBody }>("/api/phone/:session/action", async (req, reply) => {
     const sessionId = req.params.session;
     const action = req.body?.action;
@@ -41,7 +48,7 @@ export function registerPhoneAction(app: FastifyInstance): void {
     }
     const reason = rawReason as string | undefined;
 
-    const user = await requireUser(req);
+    const user = await deps.requireUser(req);
     if (!user) return reply.code(401).send({ error: "unauthorized" });
 
     let session: PhoneSession;
@@ -57,7 +64,7 @@ export function registerPhoneAction(app: FastifyInstance): void {
     }
 
     // 404, pas 403 : ne révèle pas qu'une session existe si le projet n'appartient pas à l'utilisateur.
-    const owns = await assertProjectOwner(user, session.projectId);
+    const owns = await deps.assertProjectOwner(user, session.projectId);
     if (!owns) return reply.code(404).send({ error: "session_not_found" });
 
     if (session.status !== "pending") return reply.code(409).send({ error: "already_handled" });

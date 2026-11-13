@@ -3,8 +3,15 @@ import { after, before, describe, it } from "node:test";
 import { isHifricaEvent, phoneSessionKey, projectChannel, type PhoneSession } from "@hifrica/shared";
 import Fastify, { type FastifyInstance } from "fastify";
 import { Redis } from "ioredis";
-import { registerPhoneAction } from "./phone.js";
+import { registerPhoneAction, type PhoneActionDeps } from "./phone.js";
 import { registerValkey, sharedValkey } from "./valkey.js";
+
+// L'authentification réelle (Better Auth) n'est pas configurée dans ce test : on bouchonne requireUser/
+// assertProjectOwner pour tester la logique de phone.ts indépendamment de C2.
+const fakeAuth: PhoneActionDeps = {
+  requireUser: async () => ({ id: "test-user", email: "test@example.com", name: "Test" }),
+  assertProjectOwner: async () => true,
+};
 
 function session(overrides: Partial<PhoneSession> = {}): PhoneSession {
   return {
@@ -31,7 +38,7 @@ describe(
     before(async () => {
       app = Fastify({ logger: false });
       registerValkey(app, { VALKEY_URL: url });
-      registerPhoneAction(app);
+      registerPhoneAction(app, fakeAuth);
       await app.ready();
       // Le client partagé se connecte au premier usage : on attend qu'il soit prêt avant les requêtes.
       await waitFor(() => sharedValkey()?.status === "ready");
