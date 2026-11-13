@@ -4,6 +4,7 @@ import { after, before, describe, it } from "node:test";
 import { isHifricaEvent, projectChannel, validateSimulatorYaml } from "@hifrica/shared";
 import Fastify, { type FastifyInstance } from "fastify";
 import { Redis } from "ioredis";
+import "./context.js";
 import type { Simulator } from "./simulators.js";
 import { registerUssd } from "./ussd.js";
 import { registerValkey, sharedValkey } from "./valkey.js";
@@ -22,8 +23,12 @@ describe("moteur USSD — avec un vrai Valkey (TEST_VALKEY_URL)", { skip: !proce
   let sub: Redis;
   const received: unknown[] = [];
 
+  const capturedContexts: unknown[] = [];
+
   before(async () => {
     app = Fastify({ logger: false });
+    app.decorateRequest("hifrica", null);
+    app.addHook("onResponse", async (req) => void capturedContexts.push(req.hifrica));
     registerValkey(app, { VALKEY_URL: url });
     registerUssd(app, simulators);
     await app.ready();
@@ -121,6 +126,82 @@ describe("moteur USSD — avec un vrai Valkey (TEST_VALKEY_URL)", { skip: !proce
     const res = await dial({ sessionId: "jamais-vu", text: "1" });
     assert.equal(res.statusCode, 200);
     assert.match(res.json().text, /1\. Solde/);
+  });
+
+  it("renseigne request.hifrica (channel: ussd) pour que la console (C4) journalise l'échange", async () => {
+    capturedContexts.length = 0;
+    const start = await dial({});
+    const sessionId = start.json().sessionId as string;
+    await dial({ sessionId, text: "1" });
+
+    assert.equal(capturedContexts.length, 2);
+    for (const ctx of capturedContexts) {
+      const c = ctx as { simulator: string; channel: string; projectId: string; endpointId: string };
+      assert.equal(c.simulator, "mobile-money-ussd");
+      assert.equal(c.channel, "ussd");
+      assert.equal(c.projectId, "demo");
+    }
+    // endpointId porte le menu de chaque échange, faute d'« endpoint » en USSD.
+    assert.equal((capturedContexts[0] as { endpointId: string }).endpointId, "start");
+    assert.equal((capturedContexts[1] as { endpointId: string }).endpointId, "pin_balance");
+  });
+
+  it("saisie de plus de 182 caractères → 400, pas de session créée", async () => {
+    const res = await dial({ text: "x".repeat(183) });
+    assert.equal(res.statusCode, 400);
+    assert.deepEqual(res.json(), { error: "input_too_long" });
+  });
+
+  it("182 caractères exactement est accepté", async () => {
+    const start = await dial({});
+    const sessionId = start.json().sessionId as string;
+    const res = await dial({ sessionId, text: "1".repeat(182) }); // ne correspond à rien dans `on` → redemande start
+    assert.equal(res.statusCode, 200);
+  });
+});
+
+describe("moteur USSD — troncature défensive du texte rendu", { skip: !process.env.TEST_VALKEY_URL }, () => {
+  const url = process.env.TEST_VALKEY_URL as string;
+  let app: FastifyInstance;
+
+  // Simulateur construit en mémoire : un gabarit {{var}} peut faire dépasser 182 caractères même si
+  // le texte du YAML et la saisie de l'utilisateur sont chacun dans la limite.
+  const LONG_VALUE = "a".repeat(180); // ≤ 182 (accepté en saisie), mais "Valeur : " + 180 > 182 une fois rendu.
+  const simulatorWithLongTemplate: Simulator = {
+    name: "long-template-ussd",
+    kind: "ussd",
+    code: "*999#",
+    menus: {
+      start: { text: "Entrez une valeur", input: "v", next: "echo" },
+      echo: { text: "Valeur : {{v}}", end: true },
+    },
+  };
+
+  before(async () => {
+    app = Fastify({ logger: false });
+    app.decorateRequest("hifrica", null);
+    registerValkey(app, { VALKEY_URL: url });
+    registerUssd(app, new Map([[simulatorWithLongTemplate.name, simulatorWithLongTemplate]]));
+    await app.ready();
+    await waitFor(() => sharedValkey()?.status === "ready");
+  });
+
+  after(async () => {
+    await app.close();
+  });
+
+  it("le texte rendu ne dépasse jamais 182 caractères, même après substitution d'un gabarit", async () => {
+    const start = await app.inject({ method: "POST", url: "/long-template-ussd/ussd", headers: AUTH, payload: {} });
+    const sessionId = start.json().sessionId as string;
+    const res = await app.inject({
+      method: "POST",
+      url: "/long-template-ussd/ussd",
+      headers: AUTH,
+      payload: { sessionId, text: LONG_VALUE },
+    });
+    const body = res.json();
+    assert.ok(body.text.length <= 182, `texte de ${body.text.length} caractères, attendu ≤ 182`);
+    assert.ok(body.text.startsWith("Valeur : "));
   });
 });
 

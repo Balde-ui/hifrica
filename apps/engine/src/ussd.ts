@@ -12,12 +12,16 @@ import { randomUUID } from "node:crypto";
 import type { UssdEndEvent, UssdInputEvent, UssdScreenEvent } from "@hifrica/shared";
 import type { FastifyInstance } from "fastify";
 import { authenticate } from "./auth.js";
+import type { HifricaRequestContext } from "./context.js";
 import { publishEvent } from "./events.js";
 import type { Simulator, UssdMenu } from "./simulators.js";
 import { runCommand } from "./valkey.js";
 
 /** Au-delà, une session abandonnée expire dans Valkey (comportement réel d'un appel USSD raccroché). */
 const USSD_SESSION_TTL_SEC = 180;
+/** Limite réelle d'un écran/d'une saisie USSD (contrainte du schéma YAML partagé, appliquée ici aussi
+ * côté saisie utilisateur et côté texte rendu, qu'un gabarit peut faire dépasser). */
+const USSD_MAX_LENGTH = 182;
 
 interface UssdSessionState {
   projectId: string;
@@ -57,8 +61,15 @@ export function registerUssd(app: FastifyInstance, simulators: Map<string, Simul
       if (!auth.ok) return reply.code(401).send({ error: "invalid_test_key" });
       const { projectId } = auth;
 
+      // Visible dans la console (C4) : même mécanisme que les simulateurs HTTP, channel: "ussd".
+      const hifrica: HifricaRequestContext = { simulator: sim.name, channel: "ussd", projectId };
+      if (auth.apiKeyId !== undefined) hifrica.apiKeyId = auth.apiKeyId;
+      req.hifrica = hifrica;
+
       const requestedSessionId = req.body?.sessionId;
       const text = typeof req.body?.text === "string" ? req.body.text : "";
+      // Limite réelle d'un réseau USSD : une saisie plus longue n'existerait jamais en pratique.
+      if (text.length > USSD_MAX_LENGTH) return reply.code(400).send({ error: "input_too_long" });
 
       let state: UssdSessionState | undefined;
       let sessionId = typeof requestedSessionId === "string" && requestedSessionId !== "" ? requestedSessionId : randomUUID();
@@ -103,6 +114,8 @@ export function registerUssd(app: FastifyInstance, simulators: Map<string, Simul
         menuKey = resolveNextMenuKey(currentMenu, state.menu, text);
       }
 
+      hifrica.endpointId = menuKey; // pas d'« endpoint » en USSD : le menu identifie l'échange dans la console.
+
       const menu = sim.menus[menuKey];
       if (!menu) {
         req.log.warn({ simulator: sim.name, menuKey }, "menu USSD introuvable dans le YAML, session terminée");
@@ -122,7 +135,9 @@ export function registerUssd(app: FastifyInstance, simulators: Map<string, Simul
         return reply.code(503).send({ error: "stream_unavailable" });
       }
 
-      const renderedText = renderVars(menu.text, vars);
+      // Le YAML (≤ 182 c.) et la saisie (vérifiée plus haut) sont bornés, mais leur combinaison par un
+      // gabarit {{var}} pourrait dépasser la limite réelle d'un écran USSD : on tronque par sécurité.
+      const renderedText = renderVars(menu.text, vars).slice(0, USSD_MAX_LENGTH);
       const screenEvent: UssdScreenEvent = { type: "ussd.screen", sessionId, projectId, text: renderedText, end: ended, createdAt: now };
       await publishEvent(screenEvent, req.log).catch((err: unknown) => req.log.error({ err }, "publishEvent (ussd.screen) a échoué"));
 
