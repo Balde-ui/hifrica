@@ -142,6 +142,24 @@ export interface SendResult {
   body: unknown;
 }
 
+/**
+ * Confirmation de paiement reçue par la boutique de démo (C6), lue sur GET /api/projects/:id/demo/webhooks.
+ * Le serveur ne la garde qu'après avoir vérifié la signature du webhook : la boutique ne déclare un paiement
+ * confirmé que si `paymentId` vaut l'identifiant renvoyé par son checkout (réponse 201).
+ */
+export interface DemoConfirmation {
+  /** Identifiant du checkout (data.id du corps signé). */
+  paymentId: string;
+  event: "checkout.completed";
+  status: "succeeded";
+  amount: number | string;
+  currency: string | null;
+  /** X-Hifrica-Request-Id (non signé) : traçabilité seulement. */
+  requestId: string | null;
+  deliveryId: string;
+  receivedAt: string;
+}
+
 export interface AppConfig {
   engineUrl: string;
   github: boolean;

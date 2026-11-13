@@ -30,6 +30,7 @@ import {
 } from "@hifrica/db";
 import { validateSimulatorYaml } from "@hifrica/shared";
 import { assertProjectOwner, requireUser, type AuthenticatedUser } from "./auth.js";
+import { registerDemoWebhooks } from "./demo-webhooks.js";
 
 export interface PlatformOptions {
   db: Database;
@@ -681,4 +682,7 @@ export function registerPlatformRoutes(app: FastifyInstance, opts: PlatformOptio
     }
     return reply.code(201).send(outcome);
   });
+
+  // C6 : réception des webhooks par la boutique de démonstration (plugin encapsulé, voir demo-webhooks.ts).
+  registerDemoWebhooks(app, { db, keyring: opts.keyring });
 }
