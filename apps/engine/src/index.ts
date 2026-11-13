@@ -8,7 +8,7 @@ import { buildResponse, findEndpoint, paymentPendingEvent } from "./response.js"
 import { loadSimulators } from "./simulators.js";
 import { parseDelay, render } from "./template.js";
 import { registerUssd } from "./ussd.js";
-import { scheduleWebhook } from "./webhooks.js";
+import { registerWebhooks, scheduleWebhook } from "./webhooks.js";
 
 const app = Fastify({ logger: true, bodyLimit: 64 * 1024, genReqId: () => randomUUID() });
 
@@ -19,6 +19,8 @@ app.addHook("onSend", async (request, reply, payload) => {
 // Contexte Hifrica de la requête, rempli par la route et lu par les crochets de logs.ts.
 app.decorateRequest("hifrica", null);
 registerRequestLogging(app);
+// File BullMQ et Worker des webhooks, fermés avec Fastify (onClose).
+registerWebhooks(app);
 
 const simulators = loadSimulators(process.env.SIMULATORS_DIR ?? "/simulators", (m) => app.log.info(m));
 
@@ -88,3 +90,19 @@ app.listen({ host: "0.0.0.0", port }).catch((err) => {
   app.log.error(err);
   process.exit(1);
 });
+
+// Arrêt propre : Fastify cesse d'accepter des requêtes, puis ses crochets onClose ferment le Worker et la file.
+for (const signal of ["SIGTERM", "SIGINT"] as const) {
+  process.once(signal, () => {
+    app.log.info({ signal }, "arrêt du moteur");
+    // Filet de sécurité sous le délai de 10 s de docker stop.
+    setTimeout(() => process.exit(1), 9_000).unref();
+    app.close().then(
+      () => process.exit(0),
+      (err: unknown) => {
+        app.log.error(err);
+        process.exit(1);
+      },
+    );
+  });
+}

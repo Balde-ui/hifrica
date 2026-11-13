@@ -7,6 +7,9 @@ COPY apps/engine ./apps/engine
 RUN pnpm install --frozen-lockfile --filter @hifrica/engine...
 RUN pnpm --filter @hifrica/engine... build
 WORKDIR /repo/apps/engine
+# Après le build (sinon pnpm install sauterait les devDependencies, dont TypeScript).
+# En production, WEBHOOK_ALLOW_PRIVATE est ignoré : les webhooks vers des IP privées restent bloqués.
+ENV NODE_ENV=production
 USER node
 EXPOSE 4000
 CMD ["node", "dist/index.js"]
