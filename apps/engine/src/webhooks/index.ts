@@ -9,6 +9,7 @@
 import { randomUUID } from "node:crypto";
 import type { FastifyInstance } from "fastify";
 import { processDelivery, type WebhookJobData, type WebhookLogger } from "./deliver.js";
+import { dedicatedValkey, sharedValkey } from "../valkey.js";
 import { startWebhookQueue, type WebhookQueue } from "./queue.js";
 
 export { signWebhook, verifyWebhookSignature } from "./signature.js";
@@ -56,16 +57,22 @@ export function readWebhookConfig(env: Env, log: WebhookLogger): WebhookConfig {
   return { valkeyUrl: env.VALKEY_URL || undefined, allowPrivate: wantsPrivate && !production };
 }
 
-/** Démarre la file et le Worker dans le process du moteur, et les ferme à l'arrêt de Fastify. */
+/**
+ * Démarre la file et le Worker dans le process du moteur, et les ferme à l'arrêt de Fastify.
+ * Les connexions viennent de valkey.ts (registerValkey doit être appelé avant).
+ */
 export function registerWebhooks(app: FastifyInstance, env: Env = process.env): void {
   config = readWebhookConfig(env, app.log);
-  if (!config.valkeyUrl) {
+  const producer = sharedValkey();
+  const workerConnection = dedicatedValkey("webhooks-worker");
+  if (!config.valkeyUrl || !producer || !workerConnection) {
     app.log.warn("VALKEY_URL absente : file de webhooks désactivée, aucun webhook ne sera envoyé");
     return;
   }
   const log = app.log.child({ component: "webhooks" });
   queue = startWebhookQueue({
-    valkeyUrl: config.valkeyUrl,
+    producer,
+    workerConnection,
     log,
     process: (data, attempt) =>
       processDelivery(data, attempt, {
