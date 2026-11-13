@@ -255,6 +255,9 @@ const AI_ERRORS: Record<string, string> = {
   ai_timeout: "La génération a pris trop de temps : réessayez avec une description plus courte.",
   quota_exceeded: "Quota de générations atteint pour l'heure : réessayez plus tard.",
   daily_limit_reached: "Le plafond quotidien de générations est atteint : réessayez demain.",
+  // Erreurs de l'assistant réservé aux comptes connectés (PR #23) : 401 sans session, 429 quota du compte.
+  auth_required: "Connectez-vous pour utiliser l'assistant.",
+  user_quota_exceeded: "Quota du jour atteint. Réessayez demain.",
 };
 
 function AiPanel({ onClose, onGenerated }: { onClose: () => void; onGenerated: (yaml: string) => void }) {
