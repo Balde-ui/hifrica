@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { AiQuota, clientKey, FallbackStore, MemoryStore, type CounterStore } from "./quota.js";
+import { AiQuota, clientKey, createQuotaFromEnv, FallbackStore, MemoryStore, type CounterStore } from "./quota.js";
 
 describe("clé de quota", () => {
   it("IPv4 : l'adresse entière", () => {
@@ -48,10 +48,33 @@ describe("compteurs", () => {
     const warnings: unknown[] = [];
     const store = new FallbackStore(failing, new MemoryStore(), { warn: (o: unknown) => void warnings.push(o) } as never);
     const quota = new AiQuota({ store, perClientLimit: 2 });
-    assert.deepEqual(await quota.consume("198.51.100.1"), { ok: true });
-    assert.deepEqual(await quota.consume("198.51.100.1"), { ok: true });
-    const third = await quota.consume("198.51.100.1");
+    assert.deepEqual(await quota.consume("198.51.100.1", "user-1"), { ok: true });
+    assert.deepEqual(await quota.consume("198.51.100.1", "user-1"), { ok: true });
+    const third = await quota.consume("198.51.100.1", "user-1");
     assert.equal(third.ok, false);
     assert.equal(warnings.length, 1, "avertissement limité");
+  });
+});
+
+describe("quota par compte", () => {
+  it("par jour UTC : vérifié avant le quota IP et le plafond global, remis à zéro à minuit UTC", async () => {
+    let now = Date.UTC(2026, 10, 12, 23, 0, 0);
+    const quota = new AiQuota({ store: new MemoryStore(() => now), now: () => now, userDailyLimit: 2, perClientLimit: 2, dailyLimit: 2 });
+    assert.deepEqual(await quota.consume("198.51.100.1", "user-a"), { ok: true });
+    assert.deepEqual(await quota.consume("198.51.100.1", "user-a"), { ok: true });
+    // Compte, IP et plafond global sont tous épuisés : c'est le refus du compte qui est renvoyé.
+    assert.deepEqual(await quota.consume("198.51.100.1", "user-a"), { ok: false, error: "user_quota_exceeded", retryAfter: 3600 });
+    // Un autre compte n'est pas bloqué par le quota du premier (mais l'IP, elle, est épuisée).
+    assert.deepEqual(await quota.consume("198.51.100.1", "user-b"), { ok: false, error: "quota_exceeded", retryAfter: 3600 });
+    now = Date.UTC(2026, 10, 13, 0, 0, 1);
+    assert.deepEqual(await quota.consume("198.51.100.9", "user-a"), { ok: true }, "nouveau jour UTC");
+  });
+
+  it("AI_USER_DAILY_LIMIT : 20 par défaut, valeur invalide ignorée", () => {
+    const log = { warn: () => undefined } as never;
+    assert.equal(createQuotaFromEnv({}, log).userDailyLimit, 20);
+    assert.equal(createQuotaFromEnv({ AI_USER_DAILY_LIMIT: "5" }, log).userDailyLimit, 5);
+    assert.equal(createQuotaFromEnv({ AI_USER_DAILY_LIMIT: "0" }, log).userDailyLimit, 0);
+    for (const bad of ["", "-1", "2.5", "abc"]) assert.equal(createQuotaFromEnv({ AI_USER_DAILY_LIMIT: bad }, log).userDailyLimit, 20, bad);
   });
 });

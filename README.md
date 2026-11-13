@@ -9,7 +9,7 @@ Projet présenté au concours CADEV 2026.
 - **Application** : https://app.hifrica.site
 - **Simulateurs** : https://sim.hifrica.site
 
-> **État du projet.** Le moteur HTTP, les scénarios d'échec, les comptes, les projets, les clés, la console, le catalogue, l'éditeur et l'assistant IA fonctionnent. Sont **en cours** : le téléphone simulé (confirmation d'un paiement par le client), le flux temps réel (SSE) de la console et l'exécution des simulateurs USSD et SMS.
+> **État du projet.** Fonctionnent : le moteur HTTP, les scénarios d'échec, les comptes, les projets, les clés, la console, le catalogue, l'éditeur, l'assistant IA, les webhooks signés (URL et secret par projet, historique des tentatives), le flux temps réel (SSE) des événements d'un projet et la route de confirmation d'un paiement (`POST /api/phone/{session}/action`). Sont **en cours** : l'écran du téléphone simulé dans l'interface et l'exécution des simulateurs USSD et SMS.
 
 ---
 
@@ -84,7 +84,7 @@ endpoints:
       status: 201
       # {{uuid}} : nouvel identifiant ; {{body.x}} : champ du corps reçu ; {{now}} : date ISO 8601
       body: { id: "{{uuid}}", status: "pending", amount: "{{body.amount}}", created_at: "{{now}}" }
-    phone:                          # écran affiché sur le téléphone simulé (en cours)
+    phone:                          # écran du téléphone simulé (affichage dans l'interface : en cours)
       screen: confirm-payment
       text: "Payer {{body.amount}} FCFA à {{body.merchant}} ?"
     webhook:
@@ -178,7 +178,7 @@ La page **Éditeur** valide le YAML pendant la frappe et place chaque erreur sur
 
 Dans l'éditeur, **✨ Générer avec l'IA** transforme une description en français en simulateur YAML. Le résultat est validé par le même schéma, corrigé automatiquement jusqu'à deux fois, puis marqué **« Généré par IA, à vérifier »** : relisez chaque endpoint et chaque scénario avant de publier.
 
-L'assistant est désactivé tant que le serveur n'a pas `AI_GENERATION_ENABLED=true`. Les fournisseurs (DeepSeek, Gemini en secours), les données envoyées et les limites du masquage sont décrits dans [`AI_USAGE.md`](AI_USAGE.md).
+L'assistant est réservé aux utilisateurs connectés (sans session : `401 auth_required`), avec un quota par compte de 20 générations par jour UTC (`AI_USER_DAILY_LIMIT`). Il est désactivé tant que le serveur n'a pas `AI_GENERATION_ENABLED=true`. Les fournisseurs (DeepSeek, Gemini en secours), les données envoyées et les limites du masquage sont décrits dans [`AI_USAGE.md`](AI_USAGE.md).
 
 ---
 
@@ -187,9 +187,19 @@ L'assistant est désactivé tant que le serveur n'a pas `AI_GENERATION_ENABLED=t
 Le moteur prévient le serveur de votre app par un `POST` JSON signé :
 
 - **sans `on`** : après la réponse, au bout du délai `after` (30 s au plus) ;
-- **avec `on: phone.confirm`** ou **`on: phone.reject`** : quand le client confirme ou refuse sur le téléphone simulé (le téléphone est **en cours**).
+- **avec `on: phone.confirm`** ou **`on: phone.reject`** : quand le client confirme ou refuse le paiement (voir ci-dessous).
 
-**Destination.** Chaque projet a son URL de webhook et son secret de signature (onglet **Paramètres**). Ils sont lus au moment de chaque envoi : une URL modifiée s'applique aux envois suivants, relances comprises. Sans URL, rien n'est envoyé. Le même onglet affiche l'**historique des webhooks** : une ligne par tentative, avec la date, l'événement, le résultat, le code HTTP, la durée et l'hôte de destination (jamais l'URL complète).
+**Destination.** Chaque projet a son URL de webhook et son secret de signature (`whsec_…`), dans l'onglet **Paramètres** : l'URL s'y modifie, le secret s'y affiche et se copie. Les deux sont lus au moment de chaque envoi : une URL modifiée s'applique aux envois suivants, relances comprises. Sans URL, rien n'est envoyé.
+
+**Historique.** Le même onglet affiche l'**historique des webhooks** : une ligne par tentative, avec la date, l'événement, le numéro de tentative, le résultat (`Livré`, `Erreur HTTP`, `Erreur réseau`, `Délai dépassé`, `Bloqué` par la protection SSRF, `Pas d'URL`, `Secret indisponible`), le code HTTP, la durée et l'hôte de destination (jamais l'URL complète ni le corps).
+
+### Confirmation du paiement
+
+Quand un endpoint a un bloc `phone` (écran `confirm-payment`, par défaut) et que sa réponse contient un `id` et un montant, le moteur ouvre une session de paiement de 10 minutes, identifiée par cet `id`, et publie l'événement `payment.pending` sur le flux temps réel du projet (`GET /api/projects/{id}/stream`, Server-Sent Events).
+
+La session se confirme ou se refuse par `POST /api/phone/{session}/action`, avec `{"action": "confirm"}` ou `{"action": "reject", "reason": "wrong_pin"}` (`reason` facultatif, 64 caractères au plus). La route est réservée au propriétaire du projet, connecté à l'interface. La première action reçue l'emporte ; une seconde reçoit `409 {"error":"already_handled"}`, une session inconnue ou expirée `404`. L'action déclenche le webhook `on: phone.confirm` ou `on: phone.reject` de l'endpoint, une seule fois. Le PIN n'est jamais envoyé au serveur.
+
+L'écran du téléphone qui appellera cette route depuis l'interface est **en cours**.
 
 ### Format
 
@@ -238,6 +248,14 @@ export function verifyHifrica(secret, header, rawBody, toleranceSec = 300) {
 
 Avec Express, lisez le corps brut : `express.raw({ type: "application/json" })`, puis `verifyHifrica(secret, req.get("X-Hifrica-Signature"), req.body)`.
 
+Cet exemple est autonome, car `@hifrica/shared` est un paquet interne au dépôt, non publié sur npm. Dans le dépôt, la même vérification s'importe depuis `@hifrica/shared/webhook-signature`, le module qui sert aussi au moteur pour signer :
+
+```ts
+import { verifyWebhookSignature } from "@hifrica/shared/webhook-signature"; // côté serveur uniquement (node:crypto)
+
+verifyWebhookSignature(secret, header, rawBody); // tolérance de 300 s par défaut
+```
+
 ---
 
 ## Architecture
@@ -245,13 +263,13 @@ Avec Express, lisez le corps brut : `express.raw({ type: "application/json" })`,
 | Dossier | Rôle |
 | --- | --- |
 | `apps/engine` | Moteur de simulation (Fastify) : lit les YAML, répond comme le vrai service, applique les scénarios, programme les webhooks (file BullMQ) |
-| `apps/api` | API de la plateforme (Fastify) : comptes, projets, clés, console, catalogue, assistant IA |
+| `apps/api` | API de la plateforme (Fastify) : comptes, projets, clés, console, catalogue, assistant IA, flux temps réel (SSE), confirmation des paiements, historique des webhooks |
 | `apps/web` | Interface (React + Vite) : tableau de bord, console, catalogue, éditeur, démo boutique |
-| `packages/shared` | Schéma YAML et validation, contrat des événements temps réel, sessions de paiement |
+| `packages/shared` | Schéma YAML et validation, contrat des événements temps réel, sessions de paiement, signature des webhooks (`@hifrica/shared/webhook-signature`, serveur uniquement) |
 | `packages/db` | Schéma PostgreSQL (Drizzle), migrations appliquées au démarrage de l'API, chiffrement des secrets |
 | `simulators/` | Simulateurs livrés avec la plateforme, importés dans le catalogue au démarrage |
 | `infra/Caddyfile` | HTTPS automatique et routage des domaines |
-| `scripts/` | Contrôle des licences, sauvegarde, récepteur de webhooks pour le développement |
+| `scripts/` | Contrôle des licences et génération de `LICENSES.md`, sauvegarde, récepteur de webhooks pour le développement |
 
 ```text
  Navigateur, app du développeur
@@ -268,7 +286,7 @@ Avec Express, lisez le corps brut : `express.raw({ type: "application/json" })`,
 
 Tout tourne avec Docker Compose sur un serveur cloud **Systalink Datacloud** (région Madrid). PostgreSQL et Valkey ne sont jamais exposés sur Internet.
 
-Chaque push sur `main` lance la CI : installation, build, tests et contrôle des licences, puis déploiement sur le serveur par SSH. Le fichier `.env` du serveur est créé à la main et n'est jamais commité.
+Chaque push sur `main` lance la CI : installation, build, tests, contrôle des licences et de `LICENSES.md`, puis déploiement sur le serveur par SSH. Le fichier `.env` du serveur est créé à la main et n'est jamais commité.
 
 ---
 
@@ -282,6 +300,7 @@ pnpm install
 pnpm build
 pnpm -r test
 pnpm licenses:check
+pnpm licenses:md:check   # LICENSES.md à jour ? sinon : pnpm licenses:md
 ```
 
 ### Le moteur seul (sans base)
@@ -314,7 +333,7 @@ curl -i -X POST localhost:4000/paiement-mobile-generique/v1/checkout \
    | --- | --- |
    | API | `DATABASE_URL`, `VALKEY_URL`, `BETTER_AUTH_SECRET`, `BETTER_AUTH_URL` (adresse de l'interface, `http://localhost:5173`), `WEBHOOK_SECRET_KEYS` (création de projets), `ENGINE_INTERNAL_URL=http://localhost:4000` (envoi de requêtes depuis la console) |
    | Moteur | `DATABASE_URL`, `VALKEY_URL`, `SIMULATORS_DIR`, `WEBHOOK_SECRET_KEYS` (la même que l'API : déchiffre le secret de chaque projet) |
-   | Assistant IA (facultatif) | `AI_GENERATION_ENABLED=true` et `DEEPSEEK_API_KEY` ou `GEMINI_API_KEY` |
+   | Assistant IA (facultatif) | `AI_GENERATION_ENABLED=true` et `DEEPSEEK_API_KEY` ou `GEMINI_API_KEY` ; `AI_USER_DAILY_LIMIT` (20 par compte et par jour) et `AI_DAILY_LIMIT` (100 par jour) |
    | Webhooks vers `localhost` (facultatif) | `WEBHOOK_ALLOW_PRIVATE=true` et `NODE_ENV=development` sur le moteur ; l'URL se règle dans l'onglet **Paramètres** du projet |
 
 3. Lancez les trois services, chacun dans son terminal :
@@ -337,7 +356,7 @@ Le moteur seul, sans base, utilise deux bouchons à la place de l'URL et du secr
 - **Secrets de webhook** : un par projet, chiffré en AES-256-GCM. Les clés de chiffrement restent hors de la base (`WEBHOOK_SECRET_KEYS`).
 - **Protection SSRF des webhooks** : `http` et `https` seulement. Les adresses privées ou réservées (IPv4 et IPv6) sont refusées au moment de la connexion, ce qui protège aussi d'un changement d'adresse DNS. Aucune redirection n'est suivie, et chaque tentative dure 5 s au plus.
 - **Journal des requêtes** : métadonnées seulement. Ni corps, ni en-tête `Authorization`, ni query ne sont enregistrés.
-- **Assistant IA** : désactivé par défaut (`AI_GENERATION_ENABLED`). Limité à 10 générations par heure et par client (adresse IPv4, ou bloc /64 en IPv6), avec un plafond global par jour (`AI_DAILY_LIMIT`, 100 par défaut). Les emails, numéros, clés, IBAN, numéros de carte et codes sont masqués avant l'envoi au fournisseur. Ce masquage est partiel : ses limites sont listées dans [`AI_USAGE.md`](AI_USAGE.md).
+- **Assistant IA** : réservé aux comptes connectés, désactivé par défaut (`AI_GENERATION_ENABLED`). Limité à 20 générations par jour et par compte (`AI_USER_DAILY_LIMIT`), 10 par heure et par client (adresse IPv4, ou bloc /64 en IPv6), avec un plafond global par jour (`AI_DAILY_LIMIT`, 100 par défaut). Les emails, numéros, clés, IBAN, numéros de carte et codes sont masqués avant l'envoi au fournisseur. Ce masquage est partiel : ses limites sont listées dans [`AI_USAGE.md`](AI_USAGE.md).
 
 ---
 
@@ -345,7 +364,7 @@ Le moteur seul, sans base, utilise deux bouchons à la place de l'URL et du secr
 
 - **Code** : tous droits réservés, voir [`LICENSE`](LICENSE). Le dépôt est public uniquement pour l'évaluation.
 - **Simulateurs publiés** : sous licence **CC BY 4.0**, pour qu'ils puissent être partagés et forkés.
-- **Composants tiers** : listés avec leur licence dans [`LICENSES.md`](LICENSES.md). La CI bloque toute licence à réciprocité (GPL, AGPL, LGPL).
+- **Composants tiers** : listés avec leur licence et leur dépôt dans [`LICENSES.md`](LICENSES.md), généré par `pnpm licenses:md`. La CI bloque toute licence à réciprocité (GPL, AGPL, LGPL) et tout `LICENSES.md` qui n'est plus à jour.
 - **Usage de l'IA** : outils utilisés pour développer le projet et LLM intégrés au produit, dans [`AI_USAGE.md`](AI_USAGE.md).
 
 ---

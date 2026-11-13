@@ -2,12 +2,13 @@ import assert from "node:assert/strict";
 import { request as httpRequest } from "node:http";
 import type { AddressInfo } from "node:net";
 import { Writable } from "node:stream";
+import { randomUUID } from "node:crypto";
 import { describe, it } from "node:test";
 import Fastify from "fastify";
 import { loadExampleYaml } from "./prompt.js";
 import { MAX_CALLS_PER_REQUEST } from "./providers.js";
 import { AiQuota, MemoryStore } from "./quota.js";
-import { aiRoutes, DEFAULT_DEADLINE_MS, type AiRoutesOptions } from "./routes.js";
+import { aiRoutes, DEFAULT_DEADLINE_MS, type AiRoutesDeps, type AiRoutesOptions } from "./routes.js";
 
 const VALID_YAML = loadExampleYaml() ?? "";
 const INVALID_YAML = "name: Pas Valide\nkind: http\n";
@@ -95,6 +96,22 @@ const geminiEmpty: Reply = {
   body: { candidates: [{ content: { role: "model", parts: [] }, finishReason: "MAX_TOKENS" }], usageMetadata: { promptTokenCount: 4000 } },
 };
 
+/**
+ * Session simulée, sans Better Auth : l'en-tête de test x-test-user donne l'id du compte connecté ;
+ * sans cet en-tête, pas de session. Chaque compte a un email, qui ne doit jamais apparaître dans les logs.
+ */
+const fakeAuth = () => {
+  const seen: string[] = [];
+  const deps: AiRoutesDeps = {
+    requireUser: async (req) => {
+      const id = req.headers["x-test-user"];
+      seen.push(typeof id === "string" ? id : "-");
+      return typeof id === "string" ? { id, email: `${id}@exemple.test`, name: "Compte de test" } : null;
+    },
+  };
+  return { deps, seen };
+};
+
 async function buildApp(options: AiRoutesOptions) {
   const lines: string[] = [];
   const stream = new Writable({
@@ -106,17 +123,27 @@ async function buildApp(options: AiRoutesOptions) {
   // Même réglage que src/index.ts : seul le premier saut (Caddy) est de confiance.
   const app = Fastify({ logger: { level: "info", stream }, trustProxy: (_address, hop) => hop === 0 });
   // L'assistant est désactivé par défaut : les tests l'activent, sauf s'ils fixent eux-mêmes la variable.
-  await app.register(aiRoutes, { ...options, env: { AI_GENERATION_ENABLED: "true", ...options.env } });
+  await app.register(aiRoutes, { deps: fakeAuth().deps, ...options, env: { AI_GENERATION_ENABLED: "true", ...options.env } });
   return { app, logs: lines };
 }
 
-const post = (app: Awaited<ReturnType<typeof buildApp>>["app"], payload: unknown, ip = "203.0.113.7") =>
+/** `user` : id du compte connecté (défaut "user-1"), ou null pour une requête sans session. */
+const post = (app: Awaited<ReturnType<typeof buildApp>>["app"], payload: unknown, ip = "203.0.113.7", user: string | null = "user-1") =>
   app.inject({
     method: "POST",
     url: "/api/simulators/generate",
-    headers: { "content-type": "application/json", "x-forwarded-for": ip },
+    headers: { "content-type": "application/json", "x-forwarded-for": ip, ...(user ? { "x-test-user": user } : {}) },
     payload: JSON.stringify(payload),
   });
+
+/** Store mémoire qui compte ses incrémentations (pour vérifier qu'aucun quota n'est consommé). */
+class CountingStore extends MemoryStore {
+  incrCalls = 0;
+  override async incr(key: string, ttlSec: number) {
+    this.incrCalls++;
+    return super.incr(key, ttlSec);
+  }
+}
 
 describe("POST /api/simulators/generate", () => {
   it("l'exemple de référence est lu et valide", () => {
@@ -393,10 +420,10 @@ describe("POST /api/simulators/generate", () => {
   it("plafond global : remis à zéro le lendemain (UTC)", async () => {
     let now = Date.UTC(2026, 10, 12, 23, 59, 0);
     const quota = new AiQuota({ store: new MemoryStore(() => now), dailyLimit: 1, now: () => now });
-    assert.deepEqual(await quota.consume("198.51.100.1"), { ok: true });
-    assert.deepEqual(await quota.consume("198.51.100.2"), { ok: false, error: "daily_limit_reached", retryAfter: 60 });
+    assert.deepEqual(await quota.consume("198.51.100.1", "user-1"), { ok: true });
+    assert.deepEqual(await quota.consume("198.51.100.2", "user-2"), { ok: false, error: "daily_limit_reached", retryAfter: 60 });
     now = Date.UTC(2026, 10, 13, 0, 0, 1);
-    assert.deepEqual(await quota.consume("198.51.100.3"), { ok: true });
+    assert.deepEqual(await quota.consume("198.51.100.3", "user-3"), { ok: true });
   });
 
   // AI_GENERATION_ENABLED : désactivé par défaut, activé seulement par "true", "1" ou "yes".
@@ -454,13 +481,14 @@ describe("POST /api/simulators/generate", () => {
 
   it("Valkey réel (TEST_VALKEY_URL) : les compteurs survivent à un redémarrage", { skip: !process.env.TEST_VALKEY_URL }, async () => {
     const ip = `198.18.${Math.floor(Math.random() * 250)}.${Math.floor(Math.random() * 250)}`;
+    const user = `user-${randomUUID()}`; // compte neuf : son quota du jour est lui aussi persistant
     const env = { DEEPSEEK_API_KEY: DEEPSEEK_KEY, VALKEY_URL: process.env.TEST_VALKEY_URL, AI_DAILY_LIMIT: "1000000" };
     const first = await buildApp({ env, fetch: fakeFetch({ deepseek: Array.from({ length: 10 }, () => deepseekOk(VALID_YAML)) }).impl });
-    for (let i = 0; i < 10; i++) assert.equal((await post(first.app, { description: DESCRIPTION }, ip)).statusCode, 200);
+    for (let i = 0; i < 10; i++) assert.equal((await post(first.app, { description: DESCRIPTION }, ip, user)).statusCode, 200);
     await first.app.close();
     // « Redémarrage » : nouvelle instance, nouveaux compteurs en mémoire, même Valkey.
     const second = await buildApp({ env, fetch: fakeFetch({}).impl });
-    const res = await post(second.app, { description: DESCRIPTION }, ip);
+    const res = await post(second.app, { description: DESCRIPTION }, ip, user);
     await second.app.close();
     assert.equal(res.statusCode, 429);
     assert.ok(res.json().retryAfter > 3500);
@@ -489,7 +517,7 @@ describe("POST /api/simulators/generate", () => {
     await app.listen({ port: 0, host: "127.0.0.1" });
     try {
       const { port } = app.server.address() as AddressInfo;
-      const client = httpRequest({ host: "127.0.0.1", port, method: "POST", path: "/api/simulators/generate", headers: { "content-type": "application/json" } });
+      const client = httpRequest({ host: "127.0.0.1", port, method: "POST", path: "/api/simulators/generate", headers: { "content-type": "application/json", "x-test-user": "user-1" } });
       client.on("error", () => undefined);
       client.end(JSON.stringify({ description: DESCRIPTION }));
       await waitFor(() => f.calls.length === 1);
@@ -532,6 +560,92 @@ describe("POST /api/simulators/generate", () => {
     // Règles A3/A4 : réutiliser l'id de la réponse dans les webhooks, marquer les étapes USSD sensibles.
     assert.match(messages[0].content, /\{\{response\.id\}\}.*jamais un nouveau \{\{uuid\}\}/);
     assert.match(messages[0].content, /sensitive: true sur toute étape USSD qui demande un PIN ou un code secret/);
+  });
+
+  describe("session et quota par compte", () => {
+    it("sans session → 401 auth_required, avant le corps, l'interrupteur et les quotas, aucun appel fournisseur", async () => {
+      const store = new CountingStore();
+      const f = fakeFetch({});
+      for (const env of [{ DEEPSEEK_API_KEY: DEEPSEEK_KEY }, { DEEPSEEK_API_KEY: DEEPSEEK_KEY, AI_GENERATION_ENABLED: "false" }, {}]) {
+        const { app } = await buildApp({ env, fetch: f.impl, quota: new AiQuota({ store }) });
+        for (const payload of [{ description: DESCRIPTION }, { description: "court" }, {}]) {
+          const res = await post(app, payload, "198.51.100.40", null);
+          assert.equal(res.statusCode, 401, JSON.stringify({ env, payload }));
+          assert.deepEqual(res.json(), { error: "auth_required" });
+        }
+      }
+      assert.equal(f.calls.length, 0, "aucun appel fournisseur");
+      assert.equal(store.incrCalls, 0, "aucun quota consommé");
+    });
+
+    it("avec session → 200 ; les logs portent l'id du compte, jamais son email", async () => {
+      const f = fakeFetch({ deepseek: [deepseekOk(VALID_YAML)] });
+      const { app, logs } = await buildApp({ env: { DEEPSEEK_API_KEY: DEEPSEEK_KEY }, fetch: f.impl });
+      const res = await post(app, { description: DESCRIPTION }, "198.51.100.41", "user-42");
+      assert.equal(res.statusCode, 200);
+      assert.equal(res.json().valid, true);
+      const allLogs = logs.join("");
+      assert.match(allLogs, /"userId":"user-42","provider":"deepseek"/);
+      assert.ok(!allLogs.includes("@exemple.test"), "jamais l'email du compte");
+      f.assertDone();
+    });
+
+    it("session illisible (erreur de l'auth) → 503 auth_unavailable, sans détail dans les logs ni appel IA", async () => {
+      const f = fakeFetch({});
+      const deps: AiRoutesDeps = {
+        requireUser: async () => {
+          throw new Error("Failed query: select ... params: awa@boutique.sn");
+        },
+      };
+      const { app, logs } = await buildApp({ env: { DEEPSEEK_API_KEY: DEEPSEEK_KEY }, fetch: f.impl, deps });
+      const res = await post(app, { description: DESCRIPTION });
+      assert.equal(res.statusCode, 503);
+      assert.deepEqual(res.json(), { error: "auth_unavailable" });
+      assert.ok(!logs.join("").includes("awa@boutique.sn"));
+      assert.equal(f.calls.length, 0);
+    });
+
+    it("21e génération du même compte dans la journée → 429 user_quota_exceeded, sans appel IA ; un autre compte a son propre quota", async () => {
+      let now = Date.UTC(2026, 10, 13, 22, 0, 0);
+      const quota = new AiQuota({ store: new MemoryStore(() => now), now: () => now });
+      const f = fakeFetch({ deepseek: Array.from({ length: 22 }, () => deepseekOk(VALID_YAML)) });
+      const { app } = await buildApp({ env: { DEEPSEEK_API_KEY: DEEPSEEK_KEY }, fetch: f.impl, quota });
+
+      // IP différente à chaque fois : seul le quota du compte peut bloquer.
+      for (let i = 1; i <= 20; i++) {
+        assert.equal((await post(app, { description: DESCRIPTION }, `198.51.100.${i}`, "user-a")).statusCode, 200, `génération ${i}`);
+      }
+      const blocked = await post(app, { description: DESCRIPTION }, "198.51.100.21", "user-a");
+      assert.equal(blocked.statusCode, 429);
+      assert.deepEqual(blocked.json(), { error: "user_quota_exceeded", retryAfter: 7200 }, "jusqu'à minuit UTC");
+      assert.equal(blocked.headers["retry-after"], "7200");
+      assert.equal(f.calls.length, 20, "aucun appel IA au-delà du quota");
+
+      // Un autre compte, même depuis une IP déjà utilisée, n'est pas bloqué par le quota de user-a.
+      assert.equal((await post(app, { description: DESCRIPTION }, "198.51.100.22", "user-b")).statusCode, 200);
+      // Le lendemain (UTC), user-a peut de nouveau générer.
+      now = Date.UTC(2026, 10, 14, 0, 0, 1);
+      assert.equal((await post(app, { description: DESCRIPTION }, "198.51.100.23", "user-a")).statusCode, 200);
+      f.assertDone();
+    });
+
+    it("AI_USER_DAILY_LIMIT est lu dans l'environnement", async () => {
+      const f = fakeFetch({ deepseek: [deepseekOk(VALID_YAML), deepseekOk(VALID_YAML)] });
+      const { app } = await buildApp({ env: { DEEPSEEK_API_KEY: DEEPSEEK_KEY, AI_USER_DAILY_LIMIT: "2" }, fetch: f.impl });
+      assert.equal((await post(app, { description: DESCRIPTION }, "198.51.100.50", "user-c")).statusCode, 200);
+      assert.equal((await post(app, { description: DESCRIPTION }, "198.51.100.51", "user-c")).statusCode, 200);
+      const res = await post(app, { description: DESCRIPTION }, "198.51.100.52", "user-c");
+      assert.equal(res.statusCode, 429);
+      assert.equal(res.json().error, "user_quota_exceeded");
+      f.assertDone();
+    });
+
+    it("ordre : interrupteur avant le quota du compte (aucun quota consommé quand l'assistant est désactivé)", async () => {
+      const store = new CountingStore();
+      const { app } = await buildApp({ env: { DEEPSEEK_API_KEY: DEEPSEEK_KEY, AI_GENERATION_ENABLED: "false" }, fetch: fakeFetch({}).impl, quota: new AiQuota({ store }) });
+      assert.equal((await post(app, { description: DESCRIPTION })).statusCode, 503);
+      assert.equal(store.incrCalls, 0);
+    });
   });
 
   it("corps invalide → 400", async () => {
