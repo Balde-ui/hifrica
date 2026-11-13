@@ -11,6 +11,7 @@ Déclaration exigée par l'article 6 du règlement CADEV 2026 : outils utilisés
 | Claude Code | Alhassane | A1 : assistant IA (génération de simulateurs) | Alhassane, relu en PR par B ou C |
 | Claude Code | Alhassane | A2 : webhooks signés (file BullMQ, HMAC, relances, protection SSRF) | Alhassane, relu en PR par B ou C |
 | Claude Code | Alhassane | A3 + A4 : session de paiement et webhook sur confirmation | Alhassane, relu en PR par B et C |
+| Claude Code | Alhassane | A5 : webhooks par projet et historique des envois | Alhassane, relu en PR par B et C |
 | Claude Code | Mamadou | C0 + C1 : conception des tables (comptes, projets, clés, simulateurs, scénarios actifs, journal des requêtes), schéma Drizzle, migrations au démarrage, chiffrement des secrets de webhook (`packages/db`) | Mamadou, relu en PR par A et B (#2) |
 | Claude Code | Mamadou | C4 (couche de données) : erreurs sûres et validation des données (E1) | Mamadou, relu en PR par A et B (#8) |
 | Claude Code | Mamadou | C2 à C5 : comptes Better Auth, projets, clés de test hachées et affichées une seule fois, vraie clé et scénario actif dans le moteur, journal des requêtes et console, catalogue, éditeur YAML et fork, boutique de démonstration | Mamadou, relu en PR par A et B (#12) |

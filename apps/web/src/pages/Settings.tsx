@@ -4,6 +4,7 @@ import { useProjects } from "../projects.js";
 import { useSession } from "../session.js";
 import { PageHead } from "../shell.js";
 import { Alert, CopyButton, Icon, Skeleton, Spinner, formatDate, useToast } from "../ui.js";
+import { WebhookHistory } from "./WebhookHistory.js";
 
 export function SettingsPage() {
   const { active, refresh } = useProjects();
@@ -116,11 +117,10 @@ export function SettingsPage() {
                 <Icon name="eye" /> Afficher le secret
               </button>
             )}
-            <Alert kind="info">
-              En cours d'intégration : les webhooks sont pour l'instant signés avec le secret global du serveur ; la signature par ce secret de projet arrive avec la tâche A5.
-            </Alert>
           </div>
         </div>
+
+        <WebhookHistory projectId={projectId} />
 
         <div className="panel">
           <div className="panel-head">

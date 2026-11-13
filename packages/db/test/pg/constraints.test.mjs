@@ -275,4 +275,80 @@ describe("contraintes et relations", { skip: SKIP_REASON }, () => {
       await q("ROLLBACK");
     }
   });
+
+  // A5 : historique des webhooks (une ligne par tentative, A-5).
+  const deliveryRow = (projectId, over = {}) => ({
+    delivery_id: randomUUID(), project_id: projectId, request_id: randomUUID(), event: "checkout.completed", attempt: 1,
+    outcome: "success", status_code: 200, duration_ms: 12, destination_host: "hooks.exemple.test", ...over,
+  });
+  async function insertDelivery(row) {
+    const cols = Object.keys(row);
+    return q(`INSERT INTO webhook_deliveries (${cols.join(", ")}) VALUES (${cols.map((_, i) => `$${i + 1}`).join(", ")}) RETURNING id`, Object.values(row));
+  }
+
+  test("webhook_deliveries : issues valides ; un code HTTP seulement si une réponse a été reçue", async () => {
+    const user = await insertUser();
+    const projectId = await insertProject(user.id);
+    await insertDelivery(deliveryRow(projectId));
+    await insertDelivery(deliveryRow(projectId, { outcome: "http_error", status_code: 500, attempt: 2 }));
+    await insertDelivery(deliveryRow(projectId, { outcome: "http_error", status_code: 302 }));
+    for (const outcome of ["network_error", "timeout", "blocked", "no_secret"]) {
+      await insertDelivery(deliveryRow(projectId, { outcome, status_code: null }));
+    }
+    await insertDelivery(deliveryRow(projectId, { outcome: "no_url", status_code: null, destination_host: null, duration_ms: 0 }));
+    await insertDelivery(deliveryRow(projectId, { request_id: null }));
+
+    const v = (over, constraint) => assertViolation(assert, insertDelivery(deliveryRow(projectId, over)), { code: CHECK, constraint });
+    await v({ status_code: null }, "webhook_deliveries_status_matches_outcome_chk");
+    await v({ outcome: "network_error", status_code: 502 }, "webhook_deliveries_status_matches_outcome_chk");
+    await v({ outcome: "success", status_code: 500 }, "webhook_deliveries_success_2xx_chk");
+    await v({ outcome: "http_error", status_code: 204 }, "webhook_deliveries_http_error_not_2xx_chk");
+    await v({ outcome: "inconnu", status_code: null }, "webhook_deliveries_outcome_chk");
+    await v({ outcome: "http_error", status_code: 99 }, "webhook_deliveries_status_code_range_chk");
+    await v({ attempt: 0 }, "webhook_deliveries_attempt_chk");
+    await v({ attempt: 11 }, "webhook_deliveries_attempt_chk");
+    await v({ event: "" }, "webhook_deliveries_event_chk");
+    await v({ duration_ms: -1 }, "webhook_deliveries_duration_chk");
+    await v({ destination_host: "" }, "webhook_deliveries_destination_host_chk");
+    await v({ destination_host: "a".repeat(254) }, "webhook_deliveries_destination_host_chk");
+    await assertViolation(assert, insertDelivery(deliveryRow(projectId, { event: null })), { code: NOT_NULL });
+  });
+
+  test("webhook_deliveries : une tentative n'est enregistrée qu'une fois ; uuid et projet existant obligatoires", async () => {
+    const user = await insertUser();
+    const projectId = await insertProject(user.id);
+    const deliveryId = randomUUID();
+    await insertDelivery(deliveryRow(projectId, { delivery_id: deliveryId, attempt: 1, outcome: "timeout", status_code: null }));
+    await insertDelivery(deliveryRow(projectId, { delivery_id: deliveryId, attempt: 2 }));
+    await assertViolation(assert, insertDelivery(deliveryRow(projectId, { delivery_id: deliveryId, attempt: 2 })), {
+      code: UNIQUE,
+      constraint: "webhook_deliveries_delivery_attempt_uidx",
+    });
+    await assert.rejects(insertDelivery(deliveryRow(projectId, { delivery_id: "pas-un-uuid" })), (e) => e.code === "22P02");
+    await assert.rejects(insertDelivery(deliveryRow(projectId, { request_id: "req-1" })), (e) => e.code === "22P02");
+    await assert.rejects(insertDelivery(deliveryRow(randomUUID())), (e) => e.code === "23503", "projet inexistant refusé (clé étrangère)");
+  });
+
+  test("webhook_deliveries : supprimés avec leur projet (cascade) ; aucune colonne pour l'URL, le corps ou le secret", async () => {
+    const user = await insertUser();
+    const projectId = await insertProject(user.id);
+    const other = await insertProject(user.id);
+    await insertDelivery(deliveryRow(projectId));
+    await insertDelivery(deliveryRow(other));
+    const { rows: cols } = await q(
+      "SELECT column_name FROM information_schema.columns WHERE table_name = 'webhook_deliveries' ORDER BY ordinal_position",
+    );
+    assert.deepEqual(cols.map((c) => c.column_name), [
+      "id", "delivery_id", "project_id", "request_id", "event", "attempt", "outcome", "status_code", "duration_ms",
+      "destination_host", "created_at",
+    ]);
+    await q("DELETE FROM projects WHERE id = $1", [projectId]);
+    const count = async (id) => (await q("SELECT count(*)::int AS n FROM webhook_deliveries WHERE project_id = $1", [id])).rows[0].n;
+    assert.equal(await count(projectId), 0);
+    assert.equal(await count(other), 1, "les autres projets ne sont pas touchés");
+    const { rows: idx } = await q(
+      "SELECT indexname FROM pg_indexes WHERE tablename = 'webhook_deliveries' AND indexname = 'webhook_deliveries_project_id_id_idx'",
+    );
+    assert.equal(idx.length, 1, "index de la console (project_id, id DESC)");
+  });
 });
