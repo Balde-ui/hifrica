@@ -5,7 +5,9 @@ import { aiRoutes } from "./ai/routes.js";
 import { createDb, createPool, parseWebhookSecretKeyring, runMigrations, type WebhookSecretKeyring } from "@hifrica/db";
 import { createAuth, registerAuthRoutes, setAuthContext } from "./auth.js";
 import { registerPlatformRoutes, seedSimulators } from "./platform.js";
+import { registerPhoneAction } from "./phone.js";
 import { registerSse } from "./sse.js";
+import { registerValkey } from "./valkey.js";
 
 // trustProxy : on ne fait confiance qu'au premier saut (Caddy) ; req.ip est alors l'IP du client lue dans X-Forwarded-For.
 const app = Fastify({ logger: true, bodyLimit: 128 * 1024, trustProxy: (_address, hop) => hop === 0 });
@@ -14,7 +16,10 @@ app.register(aiRoutes);
 
 app.get("/api/health", async () => ({ status: "ok", service: "api" }));
 
+// Connexion Valkey (sessions de paiement, publication d'événements) : enregistrée avant les routes qui l'utilisent.
+registerValkey(app);
 registerSse(app);
+registerPhoneAction(app);
 
 // Valide un YAML de simulateur sans le publier (utilisé par l'éditeur et par l'assistant IA).
 app.post<{ Body: { yaml?: string } }>("/api/simulators/validate", async (req, reply) => {

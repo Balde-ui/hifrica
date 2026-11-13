@@ -8,7 +8,7 @@
     "build": "tsc -p tsconfig.build.json",
     "dev": "tsc -p tsconfig.build.json && node dist/index.js",
     "start": "node dist/index.js",
-    "test": "tsc -p tsconfig.json && node --test dist/ai/*.test.js"
+    "test": "tsc -p tsconfig.json && node --test dist/*.test.js dist/ai/*.test.js"
   },
   "dependencies": {
     "@hifrica/db": "workspace:*",
