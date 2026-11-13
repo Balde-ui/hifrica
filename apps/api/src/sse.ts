@@ -63,7 +63,16 @@ export function registerSse(app: FastifyInstance, deps: SseDeps = defaultDeps): 
       releaseSlot(userId);
     }
 
-    const owns = await deps.assertProjectOwner(user, projectId);
+    let owns: boolean;
+    try {
+      owns = await deps.assertProjectOwner(user, projectId);
+    } catch (err) {
+      // La place prise par acquireSlot() ci-dessus doit être rendue même si la vérification
+      // échoue (base momentanément injoignable) : sinon 5 erreurs de suite bloquent l'utilisateur
+      // jusqu'au redémarrage de l'API.
+      releaseSlotOnce();
+      throw err;
+    }
     // 404, pas 403 : ne révèle pas qu'un projet existe s'il n'appartient pas à l'utilisateur.
     // isUuid() est déjà vérifié dans assertProjectOwner (C2) : un :id mal formé finit ici en 404.
     if (!owns) {

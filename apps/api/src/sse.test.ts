@@ -74,6 +74,40 @@ describe("GET /api/projects/:id/stream — limite de connexions (avec un vrai Va
     }
   });
 
+  it("une erreur d'assertProjectOwner libère la place réservée (aucune place perdue après une panne de base)", async () => {
+    resetStreamLimitsForTests();
+    let fail = true;
+    const flakyDeps: SseDeps = {
+      requireUser: async () => USER,
+      assertProjectOwner: async () => {
+        if (fail) throw new Error("base momentanément injoignable");
+        return true;
+      },
+    };
+    const flakyApp = Fastify({ logger: false });
+    registerSse(flakyApp, flakyDeps);
+    await flakyApp.listen({ port: 0, host: "127.0.0.1" });
+    const address = flakyApp.server.address();
+    if (!address || typeof address === "string") throw new Error("adresse du serveur introuvable");
+    const flakyPort = address.port;
+
+    try {
+      // 5 échecs de suite : chacun doit libérer sa place plutôt que de l'épuiser.
+      for (let i = 0; i < 5; i++) {
+        const { status } = await openStream(flakyPort);
+        assert.equal(status, 500, `tentative ${i + 1}/5 devrait échouer (500), pas bloquer la place`);
+      }
+
+      // Une place est toujours libre : la panne n'a pas accumulé de slots perdus.
+      fail = false;
+      const { req, status } = await openStream(flakyPort);
+      assert.equal(status, 200);
+      req.destroy();
+    } finally {
+      await flakyApp.close();
+    }
+  });
+
   it("une déconnexion juste après l'ouverture (pendant connect()/subscribe()) ne fait pas planter le serveur", async () => {
     resetStreamLimitsForTests();
     const { req } = await openStream(port);
