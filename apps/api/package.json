@@ -13,6 +13,8 @@
   "dependencies": {
     "@hifrica/db": "workspace:*",
     "@hifrica/shared": "workspace:*",
+    "better-auth": "1.7.22",
+    "drizzle-orm": "0.45.4",
     "fastify": "^5.6.1",
     "ioredis": "^6.0.0"
   },

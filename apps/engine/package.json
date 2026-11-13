@@ -11,8 +11,10 @@
     "test": "tsc -p tsconfig.json && node --test dist/*.test.js dist/webhooks/*.test.js"
   },
   "dependencies": {
+    "@hifrica/db": "workspace:*",
     "@hifrica/shared": "workspace:*",
     "bullmq": "^6.7.6",
+    "drizzle-orm": "0.45.4",
     "fastify": "^5.6.1",
     "ioredis": "^6.0.0"
   },
