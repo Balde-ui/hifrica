@@ -3,6 +3,7 @@
 // visible ensuite dans la console. Présentée dans un cadre de navigateur : c'est l'app d'un développeur.
 import { useEffect, useMemo, useRef, useState } from "react";
 import { api, errorMessage, rememberKey, rememberedKey, type ProjectDetail, type SendResult } from "../api.js";
+import { SimulatedPhone } from "../phone/SimulatedPhone.js";
 import { useProjects } from "../projects.js";
 import { Link } from "../router.js";
 import { PageHead } from "../shell.js";
@@ -10,6 +11,8 @@ import { Alert, Empty, Icon, JsonView, Skeleton, Spinner, StatusCode, useToast }
 
 const SIMULATOR = "paiement-mobile-generique";
 const SCENARIO = "solde-insuffisant";
+const USSD_SIMULATOR = "mobile-money-ussd";
+const USSD_CODE = "*123#";
 
 const PRODUCTS = [
   { id: "pagne", name: "Pagne wax 6 yards", price: 15000, emoji: "🧵", bg: "#f6efe4" },
@@ -151,66 +154,72 @@ export function DemoShop() {
         </div>
       </div>
 
-      <div className="browser">
-        <div className="browser-bar">
-          <div className="browser-dots"><span /><span /><span /></div>
-          <div className="browser-url">
-            <Icon name="shield" size={12} /> &nbsp;boutique-awa.exemple/panier
+      <div className="row-nw" style={{ gap: "1rem", alignItems: "flex-start", flexWrap: "wrap" }}>
+        <div className="browser" style={{ flex: "1 1 480px", minWidth: 0 }}>
+          <div className="browser-bar">
+            <div className="browser-dots"><span /><span /><span /></div>
+            <div className="browser-url">
+              <Icon name="shield" size={12} /> &nbsp;boutique-awa.exemple/panier
+            </div>
           </div>
-        </div>
-        <div className="shop">
-          <div className="shop-head">
-            <div className="shop-logo"><span>A</span> Boutique Awa</div>
-            <span style={{ fontSize: "0.82rem", color: "#5b616a" }}>{items.reduce((n, p) => n + (cart[p.id] ?? 0), 0)} article(s)</span>
-          </div>
-          <div className="shop-body">
-            <div className="products">
-              {PRODUCTS.map((p) => (
-                <div key={p.id} className="product">
-                  <div className="product-visual" style={{ background: p.bg }} aria-hidden="true">{p.emoji}</div>
-                  <div className="product-info">
-                    <span className="product-name">{p.name}</span>
-                    <span className="product-price">{fcfa(p.price)}</span>
-                    <div className="qty" role="group" aria-label={`Quantité de ${p.name}`}>
-                      <button aria-label={`Retirer ${p.name}`} onClick={() => qty(p.id, -1)}>−</button>
-                      <span>{cart[p.id] ?? 0}</span>
-                      <button aria-label={`Ajouter ${p.name}`} onClick={() => qty(p.id, 1)}>+</button>
+          <div className="shop">
+            <div className="shop-head">
+              <div className="shop-logo"><span>A</span> Boutique Awa</div>
+              <span style={{ fontSize: "0.82rem", color: "#5b616a" }}>{items.reduce((n, p) => n + (cart[p.id] ?? 0), 0)} article(s)</span>
+            </div>
+            <div className="shop-body">
+              <div className="products">
+                {PRODUCTS.map((p) => (
+                  <div key={p.id} className="product">
+                    <div className="product-visual" style={{ background: p.bg }} aria-hidden="true">{p.emoji}</div>
+                    <div className="product-info">
+                      <span className="product-name">{p.name}</span>
+                      <span className="product-price">{fcfa(p.price)}</span>
+                      <div className="qty" role="group" aria-label={`Quantité de ${p.name}`}>
+                        <button aria-label={`Retirer ${p.name}`} onClick={() => qty(p.id, -1)}>−</button>
+                        <span>{cart[p.id] ?? 0}</span>
+                        <button aria-label={`Ajouter ${p.name}`} onClick={() => qty(p.id, 1)}>+</button>
+                      </div>
                     </div>
                   </div>
-                </div>
-              ))}
-            </div>
-            <div className="checkout">
-              <h3>Récapitulatif</h3>
-              <div style={{ marginTop: "0.6rem" }}>
-                {items.length === 0 ? (
-                  <p style={{ fontSize: "0.84rem", color: "#5b616a" }}>Votre panier est vide.</p>
-                ) : (
-                  items.map((p) => (
-                    <div key={p.id} className="line">
-                      <span>{cart[p.id]} × {p.name}</span>
-                      <span>{fcfa(p.price * (cart[p.id] ?? 0))}</span>
-                    </div>
-                  ))
-                )}
-                <div className="line"><span>Livraison</span><span>Offerte</span></div>
-                <div className="line total"><span>Total</span><span>{fcfa(total)}</span></div>
+                ))}
               </div>
-              <button className="pay-btn" disabled={paying || total === 0 || !key.trim() || !active} onClick={pay} aria-label={`Payer par mobile money ${fcfa(total)}`}>
-                {paying ? <><Spinner /> Paiement en cours…</> : <><span className="hide-xs">Payer par mobile money ·&nbsp;</span><span className="show-xs">Payer&nbsp;</span>{fcfa(total)}</>}
-              </button>
-              {outcome && (
-                <div className={`pay-result ${outcome.cls}`} role="status">
-                  <strong>{outcome.title}</strong>
-                  <div style={{ marginTop: "0.2rem" }}>{outcome.text}</div>
+              <div className="checkout">
+                <h3>Récapitulatif</h3>
+                <div style={{ marginTop: "0.6rem" }}>
+                  {items.length === 0 ? (
+                    <p style={{ fontSize: "0.84rem", color: "#5b616a" }}>Votre panier est vide.</p>
+                  ) : (
+                    items.map((p) => (
+                      <div key={p.id} className="line">
+                        <span>{cart[p.id]} × {p.name}</span>
+                        <span>{fcfa(p.price * (cart[p.id] ?? 0))}</span>
+                      </div>
+                    ))
+                  )}
+                  <div className="line"><span>Livraison</span><span>Offerte</span></div>
+                  <div className="line total"><span>Total</span><span>{fcfa(total)}</span></div>
                 </div>
-              )}
-              <p style={{ fontSize: "0.72rem", color: "#8a8f96", marginTop: "0.8rem" }}>
-                Démo : avec « Solde insuffisant », les paniers de plus de 500 000 FCFA sont refusés (ajoutez le groupe électrogène).
-              </p>
+                <button className="pay-btn" disabled={paying || total === 0 || !key.trim() || !active} onClick={pay} aria-label={`Payer par mobile money ${fcfa(total)}`}>
+                  {paying ? <><Spinner /> Paiement en cours…</> : <><span className="hide-xs">Payer par mobile money ·&nbsp;</span><span className="show-xs">Payer&nbsp;</span>{fcfa(total)}</>}
+                </button>
+                {outcome && (
+                  <div className={`pay-result ${outcome.cls}`} role="status">
+                    <strong>{outcome.title}</strong>
+                    <div style={{ marginTop: "0.2rem" }}>{outcome.text}</div>
+                  </div>
+                )}
+                <p style={{ fontSize: "0.72rem", color: "#8a8f96", marginTop: "0.8rem" }}>
+                  Démo : avec « Solde insuffisant », les paniers de plus de 500 000 FCFA sont refusés (ajoutez le groupe électrogène).
+                </p>
+              </div>
             </div>
           </div>
         </div>
+
+        {active && (
+          <SimulatedPhone projectId={active.id} testKey={key.trim()} ussdSimulator={USSD_SIMULATOR} ussdCode={USSD_CODE} />
+        )}
       </div>
 
       {(result || paying) && (
