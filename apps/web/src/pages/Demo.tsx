@@ -213,24 +213,23 @@ export function DemoShop() {
               </div>
               <div className="checkout">
                 <h3>Récapitulatif</h3>
-                <div className="field" style={{ marginTop: "0.4rem" }}>
+                <div className="field otp-field" style={{ marginTop: "0.4rem" }}>
                   <label className="label" htmlFor="dphone">Vérifier le numéro du client (SMS)</label>
-                  <div className="row" style={{ gap: "0.4rem" }}>
+                  <div className="otp-row">
                     <input
                       id="dphone"
-                      className="input mono"
+                      className="otp-input mono"
                       value={phone}
                       onChange={(e) => setPhone(e.target.value)}
                       placeholder="+221770000000"
                       autoComplete="off"
-                      style={{ flex: 1 }}
                     />
-                    <button className="btn btn-sm" disabled={sendingOtp || !phone.trim() || !key.trim() || !active} onClick={() => void sendOtp()}>
+                    <button className="otp-btn" disabled={sendingOtp || !phone.trim() || !key.trim() || !active} onClick={() => void sendOtp()}>
                       {sendingOtp ? <Spinner /> : "Recevoir un code"}
                     </button>
                   </div>
-                  {otpSent && <p className="muted" style={{ fontSize: "0.72rem", marginTop: "0.3rem" }}>Code envoyé : consultez le SMS reçu sur le téléphone simulé.</p>}
-                  {otpError && <p style={{ fontSize: "0.72rem", marginTop: "0.3rem", color: "#c0392b" }}>{otpError}</p>}
+                  {otpSent && <p className="otp-hint">Code envoyé : consultez le SMS reçu sur le téléphone simulé.</p>}
+                  {otpError && <p className="otp-error">{otpError}</p>}
                 </div>
                 <div style={{ marginTop: "0.6rem" }}>
                   {items.length === 0 ? (
