@@ -19,7 +19,7 @@ Projet présenté au concours CADEV 2026.
 
 1. Sur https://app.hifrica.site, cliquez sur **Créer un compte** (email et mot de passe de 8 caractères au moins, ou GitHub si le serveur l'a activé).
 2. Cliquez sur **+ Nouveau projet** et donnez-lui un nom.
-3. Dans l'onglet **Clés de test**, cliquez sur **+ Nouvelle clé**. La clé (`sk_test_` suivi de 43 caractères) s'affiche **une seule fois** : copiez-la tout de suite. Hifrica n'en garde que l'empreinte.
+3. Dans **Clés API**, cliquez sur **+ Nouvelle clé**. La clé (`sk_test_` suivi de 43 caractères) s'affiche **une seule fois** : copiez-la tout de suite. Hifrica n'en garde que l'empreinte.
 
 ### 2. Appeler un simulateur
 
@@ -41,7 +41,7 @@ Une clé qui n'a pas été créée dans Hifrica, ou qui a été révoquée, reç
 Deux façons, au choix :
 
 - **Pour un seul appel**, ajoutez l'en-tête `X-Hifrica-Scenario: solde-insuffisant` ;
-- **Pour tous les appels du projet**, choisissez « solde-insuffisant » dans l'onglet **Scénarios**.
+- **Pour tous les appels du projet**, choisissez **solde-insuffisant** dans la page **Simulateurs** du projet.
 
 Un scénario ne s'applique que si sa condition est remplie. Pour `solde-insuffisant`, il faut un montant supérieur à 500 000 :
 
@@ -54,7 +54,7 @@ curl -i -X POST https://sim.hifrica.site/paiement-mobile-generique/v1/checkout \
 # → 402 {"error":"insufficient_funds"}
 ```
 
-L'en-tête l'emporte sur le scénario choisi dans la console. Sans l'un ni l'autre, le simulateur donne sa réponse normale.
+L'en-tête l'emporte sur le scénario choisi dans **Simulateurs**. Sans l'un ni l'autre, le simulateur donne sa réponse normale.
 
 ### 4. Voir la requête dans la console
 
