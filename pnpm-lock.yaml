@@ -16,6 +16,12 @@ importers:
       '@hifrica/shared':
         specifier: workspace:*
         version: link:../../packages/shared
+      better-auth:
+        specifier: 1.7.22
+        version: 1.7.22(drizzle-kit@0.31.11)(drizzle-orm@0.45.4(@types/pg@8.23.1)(kysely@0.29.9)(pg@8.23.1))(pg@8.23.1)(react-dom@19.3.1(react@19.3.1))(react@19.3.1)
+      drizzle-orm:
+        specifier: 0.45.4
+        version: 0.45.4(@types/pg@8.23.1)(kysely@0.29.9)(pg@8.23.1)
       fastify:
         specifier: ^5.6.1
         version: 5.12.8
@@ -32,12 +38,18 @@ importers:
 
   apps/engine:
     dependencies:
+      '@hifrica/db':
+        specifier: workspace:*
+        version: link:../../packages/db
       '@hifrica/shared':
         specifier: workspace:*
         version: link:../../packages/shared
       bullmq:
         specifier: ^6.7.6
         version: 6.7.6(ioredis@6.0.0)(pg@8.23.1)
+      drizzle-orm:
+        specifier: 0.45.4
+        version: 0.45.4(@types/pg@8.23.1)(kysely@0.29.9)(pg@8.23.1)
       fastify:
         specifier: ^5.6.1
         version: 5.12.8

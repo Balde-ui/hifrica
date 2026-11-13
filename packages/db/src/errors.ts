@@ -67,6 +67,22 @@ export const DB_OPERATIONS = [
   "touch_api_key",
   "get_webhook_target",
   "get_simulator_for_project",
+  // C2 / C4 / C5 : routes de la plateforme (comptes, projets, clés, console, catalogue).
+  "get_project_for_owner",
+  "list_projects",
+  "create_project",
+  "get_project",
+  "update_project",
+  "list_api_keys",
+  "create_api_key",
+  "revoke_api_key",
+  "set_active_scenario",
+  "get_active_scenario",
+  "list_request_logs",
+  "seed_simulators",
+  "list_simulators",
+  "get_simulator",
+  "publish_simulator",
 ] as const;
 export type DbOperation = (typeof DB_OPERATIONS)[number];
 /** Libellé utilisé quand l'opération fournie n'est pas dans la liste. */
