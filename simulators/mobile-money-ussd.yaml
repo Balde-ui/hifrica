@@ -1,0 +1,47 @@
+name: mobile-money-ussd
+version: 1.0.0
+description: Mobile money USSD générique (solde et envoi d'argent, format neutre).
+kind: ussd
+code: "*123#"
+menus:
+  start:
+    text: |-
+      Mobile Money
+      1. Solde
+      2. Envoyer de l'argent
+      0. Quitter
+    on:
+      "1": pin_balance
+      "2": pin_send
+      "0": bye
+  pin_balance:
+    text: "Entrez votre code secret"
+    input: pin
+    next: balance
+    sensitive: true
+  balance:
+    text: "Votre solde est de 15 000 XOF."
+    end: true
+  pin_send:
+    text: "Entrez votre code secret"
+    input: pin
+    next: amount
+    sensitive: true
+  amount:
+    text: "Montant à envoyer (XOF) ?"
+    input: amount
+    next: confirm_send
+  confirm_send:
+    text: |-
+      Envoyer {{amount}} XOF ?
+      1. Confirmer
+      2. Annuler
+    on:
+      "1": sent
+      "2": bye
+  sent:
+    text: "{{amount}} XOF envoyés avec succès."
+    end: true
+  bye:
+    text: "Au revoir."
+    end: true
