@@ -38,13 +38,39 @@ export interface SimulatedPhoneProps {
   projectId: string;
   /** Clé sk_test_ du projet, utilisée uniquement pour composer un appel USSD (proxy /send de C). */
   testKey?: string;
-  /** Slug du simulateur USSD à composer ; absent = pas de cadran USSD affiché. */
+  /** Slug du simulateur USSD à composer (ex. "mobile-money-ussd") ; absent = pas de cadran affiché. */
   ussdSimulator?: string;
+  /** Code à afficher sur le bouton (ex. "*123#", champ `code` du YAML) — distinct du slug ci-dessus. */
+  ussdCode?: string;
+}
+
+/** Réponse du proxy /api/projects/:id/send : status/body sont ceux du MOTEUR, pas du proxy lui-même
+ * (le proxy répond toujours 200 ; un échec côté moteur — 400/401/404/503 — arrive donc ici, pas via
+ * une ApiError). Sans ce contrôle, un échec du moteur laissait l'écran USSD vide. */
+interface EngineSendResult {
+  status: number;
+  body: unknown;
+}
+
+function engineErrorMessage(body: unknown): string {
+  if (body && typeof body === "object" && "error" in body) {
+    const code = (body as { error: unknown }).error;
+    if (typeof code === "string") {
+      const KNOWN: Record<string, string> = {
+        invalid_test_key: "Clé de test invalide ou révoquée.",
+        simulator_not_found: "Simulateur USSD introuvable.",
+        input_too_long: "Réponse trop longue (182 caractères maximum).",
+        stream_unavailable: "Service temporairement indisponible.",
+      };
+      return KNOWN[code] ?? `Erreur du simulateur (${code}).`;
+    }
+  }
+  return "Erreur inattendue du simulateur USSD.";
 }
 
 type PinStep = { sessionId: string } | null;
 
-export function SimulatedPhone({ projectId, testKey, ussdSimulator }: SimulatedPhoneProps) {
+export function SimulatedPhone({ projectId, testKey, ussdSimulator, ussdCode }: SimulatedPhoneProps) {
   const [payment, setPayment] = useState<PendingPayment | null>(null);
   const [pinStep, setPinStep] = useState<PinStep>(null);
   const [pin, setPin] = useState("");
@@ -115,10 +141,14 @@ export function SimulatedPhone({ projectId, testKey, ussdSimulator }: SimulatedP
     if (!ussdSimulator || !testKey) return;
     setBusy(true);
     try {
-      const r = await api<{ body: { sessionId: string; text: string; end: boolean } }>(`/api/projects/${encodeURIComponent(projectId)}/send`, {
+      const r = await api<EngineSendResult>(`/api/projects/${encodeURIComponent(projectId)}/send`, {
         body: { key: testKey, simulator: ussdSimulator, method: "POST", path: "/ussd", body: { text: "" } },
       });
-      setUssd(r.body);
+      if (r.status < 200 || r.status >= 300) {
+        flash(engineErrorMessage(r.body));
+        return;
+      }
+      setUssd(r.body as UssdState);
     } catch (err) {
       flash(errorMessage(err));
     } finally {
@@ -131,11 +161,16 @@ export function SimulatedPhone({ projectId, testKey, ussdSimulator }: SimulatedP
     const text = ussdReply;
     setBusy(true);
     try {
-      const r = await api<{ body: { sessionId: string; text: string; end: boolean } }>(`/api/projects/${encodeURIComponent(projectId)}/send`, {
+      const r = await api<EngineSendResult>(`/api/projects/${encodeURIComponent(projectId)}/send`, {
         body: { key: testKey, simulator: ussdSimulator, method: "POST", path: "/ussd", body: { sessionId: ussd.sessionId, text } },
       });
-      setUssd(r.body.end ? null : r.body);
-      if (r.body.end) flash(r.body.text);
+      if (r.status < 200 || r.status >= 300) {
+        flash(engineErrorMessage(r.body));
+        return;
+      }
+      const body = r.body as UssdState;
+      setUssd(body.end ? null : body);
+      if (body.end) flash(body.text);
       setUssdReply("");
     } catch (err) {
       flash(errorMessage(err));
@@ -171,6 +206,9 @@ export function SimulatedPhone({ projectId, testKey, ussdSimulator }: SimulatedP
         {payment && pinStep && (
           <div className="phone-card">
             <p>Entrez votre code secret pour payer {amount} {currency}</p>
+            <p className="muted" style={{ fontSize: "0.72rem" }}>
+              Démo : <code>0000</code> confirme, tout autre code refuse le paiement.
+            </p>
             <input
               className="input mono"
               type="password"
@@ -218,7 +256,7 @@ export function SimulatedPhone({ projectId, testKey, ussdSimulator }: SimulatedP
           <div className="phone-card phone-idle">
             {ussdSimulator ? (
               <button className="btn btn-ghost btn-sm" disabled={busy || !testKey} onClick={() => void dialUssd()}>
-                Composer {ussdSimulator.startsWith("*") ? ussdSimulator : "le code USSD"}
+                Composer {ussdCode ?? "le code USSD"}
               </button>
             ) : (
               <span className="muted">En attente d'un événement…</span>
