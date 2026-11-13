@@ -13,6 +13,8 @@ const SIMULATOR = "paiement-mobile-generique";
 const SCENARIO = "solde-insuffisant";
 const USSD_SIMULATOR = "mobile-money-ussd";
 const USSD_CODE = "*123#";
+const OTP_SIMULATOR = "otp-sms";
+const DEFAULT_PHONE = "+221770000000";
 
 const PRODUCTS = [
   { id: "pagne", name: "Pagne wax 6 yards", price: 15000, emoji: "🧵", bg: "#f6efe4" },
@@ -33,6 +35,10 @@ export function DemoShop() {
   const [result, setResult] = useState<SendResult | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [switching, setSwitching] = useState(false);
+  const [phone, setPhone] = useState(DEFAULT_PHONE);
+  const [sendingOtp, setSendingOtp] = useState(false);
+  const [otpSent, setOtpSent] = useState(false);
+  const [otpError, setOtpError] = useState<string | null>(null);
 
   // La clé saisie n'est remplacée que si l'utilisateur change réellement de projet (pas au premier
   // chargement de la liste, sinon une clé tapée rapidement serait effacée).
@@ -44,6 +50,8 @@ export function DemoShop() {
     lastProject.current = active.id;
     setResult(null);
     setDetail(null);
+    setOtpSent(false);
+    setOtpError(null);
     api<ProjectDetail>(`/api/projects/${active.id}`)
       .then(setDetail)
       .catch((err) => setError(errorMessage(err)));
@@ -69,6 +77,25 @@ export function DemoShop() {
       setError(errorMessage(err));
     } finally {
       setPaying(false);
+    }
+  }
+
+  async function sendOtp() {
+    if (!active || !phone.trim()) return;
+    setSendingOtp(true);
+    setOtpError(null);
+    setOtpSent(false);
+    try {
+      const r = await api<SendResult>(`/api/projects/${active.id}/send`, {
+        body: { key: key.trim(), simulator: OTP_SIMULATOR, method: "POST", path: "/v1/otp", body: { phone: phone.trim() } },
+      });
+      rememberKey(active.id, key.trim());
+      if (r.status < 200 || r.status >= 300) setOtpError(`Erreur ${r.status} du simulateur.`);
+      else setOtpSent(true);
+    } catch (err) {
+      setOtpError(errorMessage(err));
+    } finally {
+      setSendingOtp(false);
     }
   }
 
@@ -186,6 +213,25 @@ export function DemoShop() {
               </div>
               <div className="checkout">
                 <h3>Récapitulatif</h3>
+                <div className="field" style={{ marginTop: "0.4rem" }}>
+                  <label className="label" htmlFor="dphone">Vérifier le numéro du client (SMS)</label>
+                  <div className="row" style={{ gap: "0.4rem" }}>
+                    <input
+                      id="dphone"
+                      className="input mono"
+                      value={phone}
+                      onChange={(e) => setPhone(e.target.value)}
+                      placeholder="+221770000000"
+                      autoComplete="off"
+                      style={{ flex: 1 }}
+                    />
+                    <button className="btn btn-sm" disabled={sendingOtp || !phone.trim() || !key.trim() || !active} onClick={() => void sendOtp()}>
+                      {sendingOtp ? <Spinner /> : "Recevoir un code"}
+                    </button>
+                  </div>
+                  {otpSent && <p className="muted" style={{ fontSize: "0.72rem", marginTop: "0.3rem" }}>Code envoyé : consultez le SMS reçu sur le téléphone simulé.</p>}
+                  {otpError && <p style={{ fontSize: "0.72rem", marginTop: "0.3rem", color: "#c0392b" }}>{otpError}</p>}
+                </div>
                 <div style={{ marginTop: "0.6rem" }}>
                   {items.length === 0 ? (
                     <p style={{ fontSize: "0.84rem", color: "#5b616a" }}>Votre panier est vide.</p>
