@@ -39,7 +39,16 @@ const endpoint = {
       properties: {
         screen: { enum: ["confirm-payment", "sms", "notification"] },
         text: { type: "string", maxLength: 500 },
+        // Expéditeur / destinataire du SMS (gabarits {{...}} acceptés) ; sans objet hors screen: "sms".
+        from: { type: "string", maxLength: 40 },
+        to: { type: "string", maxLength: 40 },
       },
+      // required: ["screen"] est indispensable : sans lui, "if" est vrai même quand screen est absent
+      // (une propriété absente n'est jamais évaluée par son sous-schéma), et from/to seraient exigés
+      // par défaut (screen absent = confirm-payment).
+      allOf: [
+        { if: { required: ["screen"], properties: { screen: { const: "sms" } } }, then: { required: ["from", "to", "text"] } },
+      ],
     },
     webhook,
   },

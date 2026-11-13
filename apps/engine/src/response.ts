@@ -1,8 +1,9 @@
 // Propriétaire : Dev A
 // Construction de la réponse d'un endpoint : recherche, scénario, délai (plafonné à 30 s), gabarits,
 // et événement payment.pending dérivé de la réponse.
+import { randomUUID } from "node:crypto";
 import { setTimeout as sleep } from "node:timers/promises";
-import { DEFAULT_CURRENCY, type PaymentPendingEvent } from "@hifrica/shared";
+import { DEFAULT_CURRENCY, type PaymentPendingEvent, type SmsReceivedEvent } from "@hifrica/shared";
 import { conditionHolds, matchPath, type Endpoint, type Simulator } from "./simulators.js";
 import { parseDelay, render, type TemplateContext } from "./template.js";
 
@@ -100,6 +101,35 @@ export function paymentPendingEvent(args: {
     ...(merchant !== undefined ? { merchant } : {}),
     screen: "confirm-payment",
     text: String(render(phone.text ?? "", ctx)),
+    createdAt: new Date().toISOString(),
+    ...(requestId !== undefined ? { requestId } : {}),
+  };
+}
+
+/**
+ * Événement sms.received pour un endpoint à bloc phone (écran sms). Contrairement au paiement, aucune
+ * session n'est créée : c'est une notification à sens unique, publiée directement après la réponse.
+ * Renvoie undefined si l'écran n'est pas "sms", ou si from/to/text manquent (le schéma les impose déjà
+ * à la validation du YAML ; ce contrôle protège un simulateur chargé avant une mise à jour du schéma).
+ */
+export function smsReceivedEvent(args: {
+  projectId: string;
+  endpoint: Endpoint;
+  ctx: TemplateContext;
+  /** X-Hifrica-Request-Id de la requête (corrélation requête → SMS → console). */
+  requestId?: string;
+}): SmsReceivedEvent | undefined {
+  const { projectId, endpoint, ctx, requestId } = args;
+  const phone = endpoint.phone;
+  if (!phone || phone.screen !== "sms" || !phone.from || !phone.to || !phone.text) return undefined;
+
+  return {
+    type: "sms.received",
+    messageId: randomUUID(),
+    projectId,
+    from: String(render(phone.from, ctx)),
+    to: String(render(phone.to, ctx)),
+    text: String(render(phone.text, ctx)),
     createdAt: new Date().toISOString(),
     ...(requestId !== undefined ? { requestId } : {}),
   };
