@@ -66,8 +66,10 @@ export function paymentPendingEvent(args: {
   endpoint: Endpoint;
   ctx: TemplateContext;
   response: RenderedResponse;
+  /** X-Hifrica-Request-Id de la requête (corrélation requête → paiement → webhook). */
+  requestId?: string;
 }): PaymentPendingEvent | undefined {
-  const { projectId, simulator, endpoint, ctx, response } = args;
+  const { projectId, simulator, endpoint, ctx, response, requestId } = args;
   const phone = endpoint.phone;
   if (!phone || (phone.screen ?? "confirm-payment") !== "confirm-payment") return undefined;
 
@@ -99,5 +101,6 @@ export function paymentPendingEvent(args: {
     screen: "confirm-payment",
     text: String(render(phone.text ?? "", ctx)),
     createdAt: new Date().toISOString(),
+    ...(requestId !== undefined ? { requestId } : {}),
   };
 }

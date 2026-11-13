@@ -2,12 +2,14 @@ import { randomUUID } from "node:crypto";
 import Fastify from "fastify";
 import { authenticate, resolveScenario } from "./auth.js";
 import type { HifricaRequestContext } from "./context.js";
-import { publishEvent } from "./events.js";
+import { registerConfirmations } from "./confirmations.js";
 import { registerRequestLogging } from "./logs.js";
+import { startPaymentSession } from "./phone-session.js";
 import { buildResponse, findEndpoint, paymentPendingEvent } from "./response.js";
 import { loadSimulators } from "./simulators.js";
 import { parseDelay, render } from "./template.js";
 import { registerUssd } from "./ussd.js";
+import { registerValkey } from "./valkey.js";
 import { registerWebhooks, scheduleWebhook } from "./webhooks.js";
 
 const app = Fastify({ logger: true, bodyLimit: 64 * 1024, genReqId: () => randomUUID() });
@@ -19,10 +21,14 @@ app.addHook("onSend", async (request, reply, payload) => {
 // Contexte Hifrica de la requête, rempli par la route et lu par les crochets de logs.ts.
 app.decorateRequest("hifrica", null);
 registerRequestLogging(app);
+// Connexions Valkey : enregistrées EN PREMIER pour être fermées EN DERNIER (onClose s'exécute à rebours).
+registerValkey(app);
 // File BullMQ et Worker des webhooks, fermés avec Fastify (onClose).
 registerWebhooks(app);
 
 const simulators = loadSimulators(process.env.SIMULATORS_DIR ?? "/simulators", (m) => app.log.info(m));
+// A4 : abonnement aux phone.confirm / phone.reject, qui déclenchent les webhooks « on: ».
+registerConfirmations(app, simulators);
 
 app.get("/health", async () => ({ status: "ok", service: "engine", simulators: [...simulators.keys()] }));
 
@@ -57,14 +63,15 @@ app.all<{ Params: { simulator: string; "*": string } }>("/:simulator/*", async (
   // Effets de bord uniquement sur succès : un 402 (solde insuffisant) ne crée ni session ni webhook.
   if (response.status >= 200 && response.status < 300) {
     if (endpoint.phone) {
-      const event = paymentPendingEvent({ projectId, simulator: sim.name, endpoint, ctx, response });
+      const event = paymentPendingEvent({ projectId, simulator: sim.name, endpoint, ctx, response, requestId: req.id });
       if (event) {
-        await publishEvent(event, req.log).catch((err: unknown) => req.log.error({ err }, "publishEvent a échoué"));
+        // A3 : la session est écrite dans Valkey AVANT la publication ; sans session, pas d'événement.
+        await startPaymentSession({ event, ctx, response, log: req.log });
       } else {
         req.log.warn({ endpointId: endpoint.id }, "bloc phone sans payment.pending (écran non géré, id ou amount absent)");
       }
     }
-    // Les webhooks avec "on" (ex. phone.confirm) seront déclenchés par l'événement correspondant (A4).
+    // Les webhooks avec "on" (ex. phone.confirm) sont déclenchés par l'événement correspondant (A4, confirmations.ts).
     if (endpoint.webhook && !endpoint.webhook.on) {
       await scheduleWebhook(
         {
@@ -72,7 +79,7 @@ app.all<{ Params: { simulator: string; "*": string } }>("/:simulator/*", async (
           simulator: sim.name,
           requestId: req.id,
           event: endpoint.webhook.event,
-          body: render(endpoint.webhook.body ?? {}, ctx),
+          body: render(endpoint.webhook.body ?? {}, { ...ctx, response: response.body }),
           delayMs: parseDelay(endpoint.webhook.after),
         },
         req.log,

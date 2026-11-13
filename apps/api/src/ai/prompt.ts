@@ -37,7 +37,11 @@ export function buildSystemPrompt(exampleYaml?: string): string {
     "- Prévois au moins un scénario d'échec réaliste dans `scenarios` (solde insuffisant, marchand suspendu, délai dépassé...).",
     "- Montants en XOF (francs CFA) par défaut, sauf si la description précise une autre devise.",
     "- Textes USSD de 182 caractères au maximum.",
-    "- Gabarits disponibles dans les réponses : {{uuid}}, {{now}}, {{body.champ}}, {{query.champ}}, {{params.champ}}.",
+    "- Gabarits disponibles dans les réponses : {{uuid}}, {{now}}, {{body.champ}}, {{query.champ}}, {{params.champ}} ; " +
+      "dans le corps d'un webhook, aussi {{response.champ}} (corps de la réponse déjà renvoyée).",
+    "- Dans le corps d'un webhook, réutilise l'identifiant de la réponse avec {{response.id}} (ou {{response.<champ>}}), " +
+      "jamais un nouveau {{uuid}}.",
+    "- Pose sensitive: true sur toute étape USSD qui demande un PIN ou un code secret.",
     "- Jamais de vraies URL, de vraies marques, de vrais noms, numéros, emails ou clés : uniquement des données fictives.",
     "- La description a été masquée : [EMAIL], [TEL], [CLE], [IBAN], [CARTE], [SECRET] remplacent des données réelles ; " +
       "ne les recopie pas, utilise des valeurs fictives.",
