@@ -20,6 +20,8 @@ jobs:
       - run: pnpm -r test
       - name: Contrôle des licences (article 6)
         run: pnpm licenses:check
+      - name: LICENSES.md à jour (article 6)
+        run: pnpm licenses:md:check
 
   deploy:
     needs: check

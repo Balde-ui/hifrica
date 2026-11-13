@@ -26,4 +26,11 @@ Chaque contribution produite avec une IA est relue en pull request par un autre 
 - Les deux fournisseurs sont appelés directement par l'API REST (fetch), sans SDK.
 - Les conditions d'utilisation des deux fournisseurs ont été lues.
 - Le masquage est partiel (voir le tableau) ; Gemini, en offre gratuite, peut réutiliser les données envoyées : c'est pourquoi il n'est utilisé qu'en secours.
-- Tout YAML généré est validé par le JSON Schema partagé (`packages/shared`) et relu par l'utilisateur avant publication ; il est marqué « Généré par IA, à vérifier ».
+- Tout YAML généré est validé par le JSON Schema partagé (`packages/shared`) et relu par l'utilisateur avant publication.
+
+### Ce que l'interface montre (`apps/web`)
+
+- **Avertissement avant l'envoi.** La fenêtre « Générer avec l'IA » de l'éditeur (`apps/web/src/pages/Editor.tsx`) affiche, sous le champ de description : « Ne saisissez ni donnée personnelle ni secret : la description est envoyée à un fournisseur d'IA (masquage partiel). » La description est limitée à 2 000 caractères ; le bouton « Générer » reste inactif en dessous de 10.
+- **Badge sur le YAML généré.** Après une génération, l'éditeur affiche le badge « Généré par IA, à vérifier ». Il reste affiché si l'utilisateur modifie le YAML, et ne disparaît que si l'on repart du modèle de départ (bouton « Modèle »). Un YAML encore invalide après les corrections automatiques est quand même ouvert dans l'éditeur, avec ses erreurs soulignées, et ne peut pas être publié tant qu'elles restent.
+- **Badge après publication.** L'interface publie le simulateur avec `origin: "ai"`. L'API lui donne alors le statut « à vérifier » (`apps/api/src/platform.ts`), et le badge « Généré par IA, à vérifier » s'affiche dans le catalogue, la liste des simulateurs du projet et la page du simulateur (`SimulatorBadges`, `apps/web/src/ui.tsx`). L'origine est fixée à la première publication : les versions suivantes la conservent.
+- **Limites.** L'origine est déclarée par l'interface, pas prouvée : un appel direct à l'API sans `origin: "ai"` publie sans badge, et un fork d'un simulateur généré par IA repart avec une origine « manuelle ». Le badge est un signal pour le lecteur, pas une vérification du contenu.
