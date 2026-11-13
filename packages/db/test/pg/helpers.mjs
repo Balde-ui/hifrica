@@ -75,4 +75,5 @@ export const EXPECTED_TABLES = [
   "simulators",
   "users",
   "verifications",
+  "webhook_deliveries",
 ];
