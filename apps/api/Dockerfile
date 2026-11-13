@@ -5,8 +5,8 @@ COPY package.json pnpm-lock.yaml pnpm-workspace.yaml tsconfig.base.json ./
 COPY packages/shared ./packages/shared
 COPY packages/db ./packages/db
 COPY apps/api ./apps/api
-# Exemple lu au démarrage par l'assistant IA (prompt).
-COPY simulators/paiement-mobile-generique.yaml ./simulators/paiement-mobile-generique.yaml
+# Simulateurs livrés : exemple du prompt IA (A1) et import du catalogue au démarrage (C5).
+COPY simulators ./simulators
 RUN pnpm install --frozen-lockfile --filter @hifrica/api...
 RUN pnpm --filter @hifrica/api... build
 WORKDIR /repo/apps/api
