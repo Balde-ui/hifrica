@@ -20,6 +20,8 @@ packages/db/
 │   ├── schema/auth.ts        # GÉNÉRÉ : users, sessions, accounts, verifications — ne pas modifier
 │   ├── schema/*.ts           # projects, api_keys, simulators, simulator_versions, project_simulators, request_logs
 │   ├── client.ts             # createPool (sessions en UTC) / createDb
+│   ├── errors.ts             # erreurs sûres : DbOperationError, toSafeDbError, safeDbCall, InvalidInputError
+│   ├── validate.ts           # isUuid, méthode HTTP, error_code, slug (alignés sur les CHECK)
 │   ├── migrate.ts            # runMigrations : connexion dédiée + verrou consultatif sur cette connexion
 │   ├── crypto/api-keys.ts    # sk_test_… : génération, SHA-256, format
 │   ├── crypto/webhook-secret.ts  # secrets whsec_… chiffrés AES-256-GCM (WEBHOOK_SECRET_KEYS)
@@ -86,3 +88,21 @@ la sauvegarder à part, jamais à côté des dumps SQL.
 - Clés d'API : seule l'empreinte SHA-256 est stockée ; la clé complète n'est montrée qu'une fois.
 - `request_logs.id` est un BIGINT : `bigint` côté JS, chaîne à l'extérieur (`toApiId` / `parseApiId`).
 - `request_logs` distingue `outcome` (issue réelle) et `status` (code HTTP réellement envoyé, sinon NULL).
+
+**Erreurs et validation (E1)**
+- Tout accès à la base passe par `safeDbCall(operation, fn)` : une erreur Drizzle ou `pg` est convertie en
+  `DbOperationError` qui ne garde que `operation` (liste fermée `DB_OPERATIONS`), `kind`, un `sqlstate`
+  autorisé et, pour une violation d'intégrité, le nom de contrainte. Le message, les paramètres, `detail`,
+  `hint`, `where` et les informations de connexion d'origine ne sont **jamais** lus ni recopiés.
+- **Aucune `cause`** n'est conservée : pino (`errWithCause`), `util.inspect` et Fastify la parcourraient et
+  journaliseraient les paramètres SQL (PIN, clés, corps). En contrepartie, la pile d'une `DbOperationError`
+  pointe vers `toSafeDbError` / `safeDbCall` et non vers la requête : se fier à `operation` et à la pile de
+  l'appelant.
+- Catégories (`kind`) : violations d'intégrité, `invalid_input`, `serialization_failure`, `deadlock`,
+  `lock_not_available`, `query_canceled`, `connection`, `schema_mismatch` (`42P01`, `42703` : souvent une
+  migration non appliquée), `transaction_aborted` (`25P02`), `authentication_failed` (`28P01`, `28000`),
+  `database_not_found` (`3D000`), sinon `unknown` (sans SQLSTATE).
+- Les validateurs de `validate.ts` **refusent** sans corriger (ni `trim`, ni changement de casse) et lèvent
+  `InvalidInputError(champ, règle)`, qui ne contient **jamais** la valeur rejetée.
+- Les tests de journalisation (`test/unit/db-errors.test.mjs`) utilisent le pino et le Fastify installés pour
+  `apps/api` : s'ils sont introuvables, ces tests **échouent** (ils ne sont jamais ignorés).
