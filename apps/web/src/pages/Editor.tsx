@@ -4,7 +4,7 @@ import { findProblems } from "../editor/yamlProblems.js";
 import { YamlEditor, type YamlEditorHandle } from "../editor/YamlEditor.js";
 import { Link, useRouter } from "../router.js";
 import { useSession } from "../session.js";
-import { Alert, Modal, Spinner, useToast } from "../ui.js";
+import { Alert, Icon, Modal, Spinner, useToast } from "../ui.js";
 
 const DRAFT_KEY = "hifrica:editor-draft";
 
@@ -54,16 +54,18 @@ export function EditorPage() {
   const [publishing, setPublishing] = useState(false);
   const [published, setPublished] = useState<{ slug: string; version: string } | null>(null);
   const [aiOpen, setAiOpen] = useState(false);
+  const [cursor, setCursor] = useState({ line: 1, col: 1 });
   const handle = useRef<YamlEditorHandle | null>(null);
+  const forkToast = useRef(false);
 
   // Fork : on part du YAML publié, avec un nouveau nom à choisir.
   useEffect(() => {
     if (!forkOf) return;
     api<{ simulator: { yaml: string } }>(`/api/simulators/${encodeURIComponent(forkOf)}`)
       .then((r) => {
-        const renamed = r.simulator.yaml.replace(/^name:\s*.+$/m, `name: ${forkOf}-fork`).replace(/^version:\s*.+$/m, "version: 1.0.0");
-        setYaml(renamed);
-        toast(`Fork de ${forkOf} : changez « name » avant de publier`);
+        setYaml(r.simulator.yaml.replace(/^name:\s*.+$/m, `name: ${forkOf}-fork`).replace(/^version:\s*.+$/m, "version: 1.0.0"));
+        if (!forkToast.current) toast(`Fork de ${forkOf} : changez « name » avant de publier`);
+        forkToast.current = true;
       })
       .catch((err) => setError(errorMessage(err)))
       .finally(() => setLoadingFork(false));
@@ -83,7 +85,9 @@ export function EditorPage() {
   }, [yaml]);
 
   const check = useMemo(() => findProblems(yaml), [yaml]);
-  const meta = (check.simulator ?? {}) as { name?: string; version?: string; kind?: string };
+  const meta = (check.simulator ?? {}) as { name?: string; version?: string; kind?: string; endpoints?: unknown[]; scenarios?: object; menus?: object };
+  const fileName = `${meta.name ?? (yaml.match(/^name:\s*([\w-]+)/m)?.[1] || "simulateur")}.yaml`;
+  const lines = yaml.split("\n").length;
 
   async function publish() {
     setError(null);
@@ -92,7 +96,7 @@ export function EditorPage() {
     try {
       const r = await api<{ slug: string; version: string }>("/api/simulators", { body: { yaml, origin, ...(forkOf ? { forkOf } : {}) } });
       setPublished(r);
-      toast("Simulateur publié");
+      toast("Simulateur publié dans le catalogue");
     } catch (err) {
       if (err instanceof ApiError && err.status === 422) setError("Le serveur a refusé le YAML : corrigez les erreurs signalées.");
       else setError(errorMessage(err));
@@ -103,92 +107,119 @@ export function EditorPage() {
 
   return (
     <>
-      <div className="page-head" style={{ marginBottom: "0.75rem" }}>
-        <div>
-          <h1>Éditeur de simulateur</h1>
-          <p>YAML validé en direct contre le schéma partagé, celui qu'utilisent aussi l'API, le moteur et l'assistant IA.</p>
-        </div>
-        <div className="row">
-          <button className="btn" onClick={() => setAiOpen(true)}>
-            ✨ Générer avec l'IA
-          </button>
-          <button
-            className="btn"
-            onClick={() => {
-              setYaml(TEMPLATE);
-              setOrigin("manual");
-            }}
-          >
-            Modèle de départ
-          </button>
-          {user ? (
-            <button className="btn btn-primary" disabled={!check.valid || publishing} onClick={publish} title={check.valid ? "" : "Corrigez les erreurs avant de publier"}>
-              {publishing ? <Spinner /> : "Publier"}
-            </button>
-          ) : (
-            <Link to="/connexion?suite=/editeur" className="btn btn-primary">
-              Se connecter pour publier
-            </Link>
-          )}
-        </div>
-      </div>
-      <div className="editor-layout">
-        {loadingFork ? (
-          <div className="editor-host" style={{ display: "grid", placeItems: "center" }}>
-            <Spinner />
+      <div className="ide">
+        <div className="ide-main">
+          <div className="ide-bar">
+            <span className="ide-file">
+              <Icon name="file" /> {fileName}
+            </span>
+            {check.valid ? (
+              <span className="badge badge-ok"><Icon name="checkCircle" size={12} /> Valide</span>
+            ) : (
+              <span className="badge badge-err"><Icon name="xCircle" size={12} /> {check.problems.length} erreur{check.problems.length > 1 ? "s" : ""}</span>
+            )}
+            {origin === "ai" && <span className="badge badge-warn"><Icon name="sparkles" size={12} /> Généré par IA, à vérifier</span>}
+            <div className="row" style={{ marginLeft: "auto" }}>
+              <button className="btn btn-sm" onClick={() => setAiOpen(true)}>
+                <Icon name="sparkles" /> <span className="hide-xs">Générer avec l'IA</span>
+              </button>
+              <button
+                className="btn btn-sm"
+                onClick={() => {
+                  setYaml(TEMPLATE);
+                  setOrigin("manual");
+                }}
+                title="Remplacer par le modèle de départ"
+              >
+                <Icon name="refresh" /> <span className="hide-xs">Modèle</span>
+              </button>
+              {user ? (
+                <button className="btn btn-primary btn-sm" disabled={!check.valid || publishing} onClick={publish} title={check.valid ? "Publier dans le catalogue" : "Corrigez les erreurs avant de publier"}>
+                  {publishing ? <Spinner /> : <><Icon name="upload" /> Publier</>}
+                </button>
+              ) : (
+                <Link to="/connexion?suite=/editeur" className="btn btn-primary btn-sm">
+                  Se connecter pour publier
+                </Link>
+              )}
+            </div>
           </div>
-        ) : (
-          <YamlEditor value={yaml} onChange={setYaml} problems={check.problems} onReady={(h) => (handle.current = h)} />
-        )}
-        <aside className="side-panel">
-          <div className="card">
+          {loadingFork ? (
+            <div className="editor-host" style={{ display: "grid", placeItems: "center", background: "var(--code-bg)" }}>
+              <Spinner />
+            </div>
+          ) : (
+            <YamlEditor value={yaml} onChange={setYaml} problems={check.problems} onReady={(h) => (handle.current = h)} onCursor={(line, col) => setCursor({ line, col })} />
+          )}
+          <div className="ide-status">
+            <span>YAML</span>
+            <span>
+              Ln {cursor.line}, Col {cursor.col}
+            </span>
+            <span className="hide-xs">{lines} lignes</span>
+            <span style={{ marginLeft: "auto", color: check.valid ? "var(--ok)" : "var(--err)" }}>{check.valid ? "● schéma OK" : "● schéma invalide"}</span>
+          </div>
+        </div>
+        <aside className="ide-side">
+          <div className="ide-section">
             <div className="spread">
-              <h3 style={{ margin: 0 }}>Validation</h3>
-              {check.valid ? <span className="badge badge-ok">✓ Valide</span> : <span className="badge badge-err">{check.problems.length} erreur{check.problems.length > 1 ? "s" : ""}</span>}
+              <span className="section-title">Problèmes</span>
+              <span className={check.valid ? "badge badge-ok" : "badge badge-err"}>{check.problems.length}</span>
             </div>
             {check.valid ? (
-              <dl className="kv" style={{ marginTop: "0.6rem" }}>
-                <dt>Nom</dt>
-                <dd className="mono">{meta.name}</dd>
-                <dt>Version</dt>
-                <dd>{meta.version}</dd>
-                <dt>Type</dt>
-                <dd>{meta.kind === "ussd" ? "USSD" : "API HTTP"}</dd>
-              </dl>
+              <p className="small muted" style={{ marginTop: "0.6rem" }}>
+                Aucun problème : le YAML respecte le schéma partagé (le même que l'API, le moteur et l'assistant IA).
+              </p>
             ) : (
-              <ul className="problems" style={{ marginTop: "0.5rem" }}>
+              <ul className="problems">
                 {check.problems.map((p, i) => (
-                  <li key={i} onClick={() => handle.current?.revealLine(p.line)}>
-                    <span className="line">L{p.line}</span>
+                  <li key={i} onClick={() => handle.current?.revealLine(p.line)} tabIndex={0} onKeyDown={(e) => e.key === "Enter" && handle.current?.revealLine(p.line)}>
+                    <Icon name="xCircle" />
+                    <span className="ln">L{p.line}</span>
                     <span>{p.message}</span>
                   </li>
                 ))}
               </ul>
             )}
-            {origin === "ai" && (
-              <Alert kind="warn">
-                <strong>Généré par IA, à vérifier.</strong> Relisez chaque endpoint et scénario : le modèle peut inventer le format d'une vraie API.
-              </Alert>
-            )}
           </div>
-          {error && <Alert>{error}</Alert>}
-          {published && (
-            <Alert kind="ok">
-              <strong>
-                {published.slug} {published.version}
-              </strong>{" "}
-              est publié. <Link to={`/catalogue/${published.slug}`}>Voir sa page</Link> ou testez-le depuis la console d'un{" "}
-              <Link to="/app">projet</Link>.
-            </Alert>
+          {check.valid && (
+            <div className="ide-section">
+              <span className="section-title">Simulateur</span>
+              <dl className="kv" style={{ marginTop: "0.6rem", gridTemplateColumns: "90px minmax(0,1fr)" }}>
+                <dt>Nom</dt>
+                <dd className="mono small">{meta.name}</dd>
+                <dt>Version</dt>
+                <dd>{meta.version}</dd>
+                <dt>Type</dt>
+                <dd>{meta.kind === "ussd" ? "USSD" : "API HTTP"}</dd>
+                <dt>Contenu</dt>
+                <dd>
+                  {meta.kind === "ussd" ? `${Object.keys(meta.menus ?? {}).length} menu(s)` : `${meta.endpoints?.length ?? 0} endpoint(s)`}, {Object.keys(meta.scenarios ?? {}).length} scénario(s)
+                </dd>
+              </dl>
+            </div>
           )}
-          <div className="card small">
-            <h3>Aide-mémoire</h3>
-            <ul style={{ paddingLeft: "1.1rem", margin: 0 }} className="muted">
-              <li><code>name</code> en kebab-case, unique dans le catalogue.</li>
+          {(error || published) && (
+            <div className="ide-section stack-sm">
+              {error && <Alert>{error}</Alert>}
+              {published && (
+                <Alert kind="ok">
+                  <strong>
+                    {published.slug} {published.version}
+                  </strong>{" "}
+                  est publié dans le catalogue. <Link to={`/catalogue/${published.slug}`}>Voir sa documentation</Link>. Son exécution par le moteur arrive avec le chargement des simulateurs publiés.
+                </Alert>
+              )}
+            </div>
+          )}
+          <div className="ide-section">
+            <span className="section-title">Aide-mémoire</span>
+            <ul className="small muted" style={{ paddingLeft: "1rem", margin: "0.6rem 0 0", lineHeight: 1.8 }}>
+              <li><code>name</code> en kebab-case, unique.</li>
               <li>Augmentez <code>version</code> pour republier.</li>
-              <li>Gabarits : <code>{"{{uuid}}"}</code>, <code>{"{{now}}"}</code>, <code>{"{{body.champ}}"}</code>, <code>{"{{params.id}}"}</code>.</li>
-              <li>Prévoyez au moins un scénario d'échec dans <code>scenarios</code>.</li>
-              <li>Jamais de vraie marque, URL, clé ou donnée personnelle.</li>
+              <li>Gabarits : <code>{"{{uuid}}"}</code> <code>{"{{now}}"}</code> <code>{"{{body.x}}"}</code> <code>{"{{params.id}}"}</code></li>
+              <li>Au moins un scénario d'échec.</li>
+              <li>Aucune vraie marque, URL, clé ni donnée personnelle.</li>
             </ul>
           </div>
         </aside>
@@ -240,44 +271,51 @@ function AiPanel({ onClose, onGenerated }: { onClose: () => void; onGenerated: (
   }
 
   return (
-    <Modal title="Générer un simulateur avec l'IA" onClose={onClose}>
+    <Modal
+      title="Générer avec l'IA"
+      description="Décrivez le service en français : endpoints, réponses et scénarios d'échec."
+      onClose={onClose}
+      width={560}
+      footer={
+        <>
+          <button className="btn" onClick={onClose}>
+            Annuler
+          </button>
+          <button className="btn btn-primary" disabled={busy || description.trim().length < 10} onClick={generate}>
+            {busy ? <><Spinner /> Génération…</> : <><Icon name="sparkles" /> Générer</>}
+          </button>
+        </>
+      }
+    >
       <div className="stack">
-        <p className="muted small">
-          Décrivez le service en français : endpoints, réponses et scénarios d'échec. Ne saisissez aucune donnée personnelle ni
-          secret : la description est envoyée à un fournisseur d'IA (masquage partiel, voir AI_USAGE.md).
-        </p>
         <textarea
           className="input"
-          style={{ fontFamily: "var(--font)", fontSize: "0.95rem" }}
+          style={{ fontFamily: "var(--font)", fontSize: "0.88rem" }}
           rows={5}
           value={description}
           onChange={(e) => setDescription(e.target.value)}
           placeholder="Ex. : une API de transfert d'argent entre deux numéros, avec un scénario « numéro inconnu » et un scénario « plafond dépassé »."
           maxLength={2000}
+          aria-label="Description du simulateur"
         />
-        <div className="row">
-          <select className="input" style={{ width: 200 }} value={kind} onChange={(e) => setKind(e.target.value as "" | "http" | "ussd")} aria-label="Type">
-            <option value="">Type : au choix de l'IA</option>
-            <option value="http">API HTTP</option>
-            <option value="ussd">Menu USSD</option>
-          </select>
-          <span className="small muted">{description.trim().length}/2000</span>
+        <div className="spread">
+          <div className="segmented" role="group" aria-label="Type">
+            {(
+              [
+                ["", "Au choix"],
+                ["http", "API HTTP"],
+                ["ussd", "USSD"],
+              ] as ["" | "http" | "ussd", string][]
+            ).map(([k, label]) => (
+              <button key={k} className={kind === k ? "on" : ""} aria-pressed={kind === k} onClick={() => setKind(k)}>
+                {label}
+              </button>
+            ))}
+          </div>
+          <span className="xs muted">{description.trim().length}/2000</span>
         </div>
+        <Alert kind="info">Ne saisissez ni donnée personnelle ni secret : la description est envoyée à un fournisseur d'IA (masquage partiel).</Alert>
         {error && <Alert>{error}</Alert>}
-        <div className="row" style={{ justifyContent: "flex-end" }}>
-          <button className="btn" onClick={onClose}>
-            Annuler
-          </button>
-          <button className="btn btn-primary" disabled={busy || description.trim().length < 10} onClick={generate}>
-            {busy ? (
-              <>
-                <Spinner /> Génération…
-              </>
-            ) : (
-              "Générer"
-            )}
-          </button>
-        </div>
       </div>
     </Modal>
   );

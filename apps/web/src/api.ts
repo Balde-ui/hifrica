@@ -106,6 +106,15 @@ export interface SimulatorSummary {
   forkedFrom: string | null;
 }
 
+/**
+ * Le moteur (apps/engine) ne sert aujourd'hui que les simulateurs livrés avec le dépôt, importés en base
+ * avec le statut « verified » et sans propriétaire. Un simulateur publié depuis l'éditeur est dans le
+ * catalogue mais n'est pas encore exécuté (chargement depuis la base : évolution du moteur, à venir).
+ */
+export function isExecutable(s: Pick<SimulatorSummary, "status">): boolean {
+  return s.status === "verified";
+}
+
 export interface LogEntry {
   id: string;
   requestId: string;

@@ -10,6 +10,8 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@fontsource-variable/inter": "5.1.1",
+    "@fontsource-variable/sora": "5.1.1",
     "@hifrica/shared": "workspace:*",
     "monaco-editor": "0.52.2",
     "react": "^19.1.1",

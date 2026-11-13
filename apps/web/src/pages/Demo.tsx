@@ -1,29 +1,28 @@
-// App de démonstration « boutique » (tâche C) : une petite boutique fictive qui encaisse via le
-// simulateur « paiement mobile générique ». Chaque paiement est un VRAI appel au moteur, avec une
-// vraie clé de test du projet, visible ensuite dans la console.
-import { useEffect, useMemo, useState } from "react";
-import { api, errorMessage, rememberKey, rememberedKey, type ProjectDetail, type ProjectSummary, type SendResult } from "../api.js";
-import { Link, useRouter } from "../router.js";
-import { useSession } from "../session.js";
-import { Alert, Empty, Loading, Spinner, StatusCode, useToast } from "../ui.js";
+// App de démonstration « Boutique Awa » (tâche C) : une boutique fictive qui encaisse via le simulateur
+// « paiement mobile générique ». Chaque paiement est un VRAI appel au moteur avec une vraie clé de test,
+// visible ensuite dans la console. Présentée dans un cadre de navigateur : c'est l'app d'un développeur.
+import { useEffect, useMemo, useRef, useState } from "react";
+import { api, errorMessage, rememberKey, rememberedKey, type ProjectDetail, type SendResult } from "../api.js";
+import { useProjects } from "../projects.js";
+import { Link } from "../router.js";
+import { PageHead } from "../shell.js";
+import { Alert, Empty, Icon, JsonView, Skeleton, Spinner, StatusCode, useToast } from "../ui.js";
 
 const SIMULATOR = "paiement-mobile-generique";
+const SCENARIO = "solde-insuffisant";
 
 const PRODUCTS = [
-  { id: "pagne", name: "Pagne wax 6 yards", price: 15000, emoji: "🧵" },
-  { id: "cafe", name: "Café Touba, 1 kg", price: 4500, emoji: "☕" },
-  { id: "sac", name: "Sac en cuir artisanal", price: 32000, emoji: "👜" },
-  { id: "groupe", name: "Groupe électrogène (commande pro)", price: 650000, emoji: "⚡" },
+  { id: "pagne", name: "Pagne wax 6 yards", price: 15000, emoji: "🧵", bg: "#f6efe4" },
+  { id: "cafe", name: "Café moulu, 1 kg", price: 4500, emoji: "☕", bg: "#efe8e1" },
+  { id: "sac", name: "Sac en cuir artisanal", price: 32000, emoji: "👜", bg: "#f3ece6" },
+  { id: "groupe", name: "Groupe électrogène (pro)", price: 650000, emoji: "⚡", bg: "#eef1ea" },
 ];
 
 const fcfa = (n: number) => `${n.toLocaleString("fr-FR")} FCFA`;
 
 export function DemoShop() {
-  const { user, loading } = useSession();
-  const { search } = useRouter();
+  const { projects, active, select } = useProjects();
   const toast = useToast();
-  const [projects, setProjects] = useState<ProjectSummary[] | null>(null);
-  const [projectId, setProjectId] = useState(search.get("projet") ?? "");
   const [detail, setDetail] = useState<ProjectDetail | null>(null);
   const [key, setKey] = useState("");
   const [cart, setCart] = useState<Record<string, number>>({ pagne: 1, cafe: 2 });
@@ -32,38 +31,36 @@ export function DemoShop() {
   const [error, setError] = useState<string | null>(null);
   const [switching, setSwitching] = useState(false);
 
+  // La clé saisie n'est remplacée que si l'utilisateur change réellement de projet (pas au premier
+  // chargement de la liste, sinon une clé tapée rapidement serait effacée).
+  const lastProject = useRef<string | null>(null);
   useEffect(() => {
-    if (!user) return;
-    api<{ projects: ProjectSummary[] }>("/api/projects")
-      .then((r) => {
-        setProjects(r.projects);
-        if (!projectId && r.projects[0]) setProjectId(r.projects[0].id);
-      })
-      .catch((err) => setError(errorMessage(err)));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [user]);
-
-  useEffect(() => {
-    if (!projectId) return;
-    setKey(rememberedKey(projectId));
+    if (!active) return;
+    const remembered = rememberedKey(active.id);
+    setKey((current) => (lastProject.current !== null && lastProject.current !== active.id ? remembered : remembered || current));
+    lastProject.current = active.id;
     setResult(null);
-    api<ProjectDetail>(`/api/projects/${projectId}`)
+    setDetail(null);
+    api<ProjectDetail>(`/api/projects/${active.id}`)
       .then(setDetail)
       .catch((err) => setError(errorMessage(err)));
-  }, [projectId]);
+  }, [active]);
 
   const total = useMemo(() => PRODUCTS.reduce((sum, p) => sum + p.price * (cart[p.id] ?? 0), 0), [cart]);
+  const items = PRODUCTS.filter((p) => (cart[p.id] ?? 0) > 0);
   const scenario = detail?.scenarios[SIMULATOR] ?? null;
+  const hasKey = Boolean(detail?.keys.some((k) => !k.revokedAt));
 
   async function pay() {
+    if (!active) return;
     setPaying(true);
     setError(null);
     setResult(null);
     try {
-      const r = await api<SendResult>(`/api/projects/${projectId}/send`, {
+      const r = await api<SendResult>(`/api/projects/${active.id}/send`, {
         body: { key: key.trim(), simulator: SIMULATOR, method: "POST", path: "/v1/checkout", body: { amount: total, merchant: "Boutique Awa" } },
       });
-      rememberKey(projectId, key.trim());
+      rememberKey(active.id, key.trim());
       setResult(r);
     } catch (err) {
       setError(errorMessage(err));
@@ -72,13 +69,14 @@ export function DemoShop() {
     }
   }
 
-  async function toggleScenario() {
+  async function setScenario(next: string | null) {
+    if (!active) return;
     setSwitching(true);
     try {
-      const next = scenario === "solde-insuffisant" ? null : "solde-insuffisant";
-      await api(`/api/projects/${projectId}/scenario`, { method: "PUT", body: { simulator: SIMULATOR, scenario: next } });
+      await api(`/api/projects/${active.id}/scenario`, { method: "PUT", body: { simulator: SIMULATOR, scenario: next } });
       setDetail((d) => (d ? { ...d, scenarios: { ...d.scenarios, [SIMULATOR]: next } } : d));
-      toast(next ? "Scénario « solde insuffisant » activé" : "Retour au scénario nominal");
+      toast(next ? "Scénario « solde insuffisant » activé" : "Paiements acceptés (scénario nominal)");
+      setResult(null);
     } catch (err) {
       setError(errorMessage(err));
     } finally {
@@ -86,118 +84,147 @@ export function DemoShop() {
     }
   }
 
-  if (loading) return <Loading />;
-  if (!user) {
+  if (projects && projects.length === 0) {
     return (
-      <div className="card">
-        <Empty title="Boutique démo" action={<Link to="/connexion?suite=/demo" className="btn btn-primary">Se connecter</Link>}>
-          Cette boutique fictive encaisse ses paiements avec votre projet Hifrica : connectez-vous pour l'utiliser.
+      <div className="panel">
+        <Empty icon="cart" title="La boutique a besoin d'un projet" action={<Link to="/app/projets?nouveau=1" className="btn btn-primary">Créer un projet</Link>}>
+          Elle encaisse ses paiements avec la clé de test de votre projet Hifrica.
         </Empty>
       </div>
     );
   }
 
   const outcome = result ? interpret(result) : null;
+  const qty = (id: string, delta: number) => setCart((c) => ({ ...c, [id]: Math.max(0, Math.min(9, (c[id] ?? 0) + delta)) }));
 
   return (
     <>
-      <div className="page-head">
-        <div>
-          <h1>Boutique Awa — démo</h1>
-          <p>Une app marchande fictive qui intègre le paiement mobile via Hifrica. Aucun argent réel n'est échangé.</p>
-        </div>
-        {projectId && (
-          <Link to={`/app/projets/${projectId}?onglet=console`} className="btn">
-            Voir la console du projet
+      <PageHead
+        title="Boutique démo"
+        description="L'app d'un marchand fictif intègre le paiement mobile via Hifrica. Chaque paiement est un vrai appel au simulateur, visible dans la console."
+        actions={
+          <Link to="/app/console" className="btn">
+            <Icon name="terminal" /> Voir la console
           </Link>
-        )}
-      </div>
-      {error && <Alert>{error}</Alert>}
-      {projects && projects.length === 0 && (
-        <div className="card">
-          <Empty title="Aucun projet" action={<Link to="/app" className="btn btn-primary">Créer un projet</Link>}>
-            La boutique a besoin d'un projet et d'une clé de test.
-          </Empty>
+        }
+      />
+      <div className="panel" style={{ marginBottom: "1rem" }}>
+        <div className="panel-body">
+          <div className="grid cols-3" style={{ alignItems: "end" }}>
+            <div className="field">
+              <label className="label" htmlFor="dproj">Projet Hifrica de la boutique</label>
+              <select id="dproj" className="input" value={active?.id ?? ""} onChange={(e) => select(e.target.value)}>
+                {projects?.map((p) => (
+                  <option key={p.id} value={p.id}>{p.name}</option>
+                ))}
+              </select>
+            </div>
+            <div className="field">
+              <label className="label" htmlFor="dkey">Clé de test utilisée par la boutique</label>
+              <input id="dkey" className="input mono" type="password" value={key} onChange={(e) => setKey(e.target.value)} placeholder="sk_test_…" autoComplete="off" spellCheck={false} />
+            </div>
+            <div className="field">
+              <span className="label">Comportement du simulateur</span>
+              <div className="segmented" role="radiogroup" aria-label="Scénario">
+                <button role="radio" aria-checked={scenario === null} className={scenario === null ? "on" : ""} disabled={switching || !detail} onClick={() => scenario !== null && setScenario(null)}>
+                  Paiement accepté
+                </button>
+                <button role="radio" aria-checked={scenario === SCENARIO} className={scenario === SCENARIO ? "on" : ""} disabled={switching || !detail} onClick={() => scenario !== SCENARIO && setScenario(SCENARIO)}>
+                  Solde insuffisant
+                </button>
+              </div>
+            </div>
+          </div>
+          {detail && !hasKey && (
+            <div style={{ marginTop: "0.9rem" }}>
+              <Alert kind="warn">
+                Ce projet n'a pas de clé active. <Link to="/app/cles?nouveau=1">Créez une clé</Link> : elle sera reprise ici automatiquement.
+              </Alert>
+            </div>
+          )}
+          {detail && hasKey && !key && (
+            <div style={{ marginTop: "0.9rem" }}>
+              <Alert kind="info">Collez la clé de test du projet (affichée une seule fois à sa création), ou créez-en une nouvelle dans <Link to="/app/cles">Clés API</Link>.</Alert>
+            </div>
+          )}
+          {error && <div style={{ marginTop: "0.9rem" }}><Alert>{error}</Alert></div>}
         </div>
-      )}
-      {projects && projects.length > 0 && (
+      </div>
+
+      <div className="browser">
+        <div className="browser-bar">
+          <div className="browser-dots"><span /><span /><span /></div>
+          <div className="browser-url">
+            <Icon name="shield" size={12} /> &nbsp;boutique-awa.exemple/panier
+          </div>
+        </div>
         <div className="shop">
-          <div className="card">
-            <h2>Panier</h2>
-            <div className="stack">
+          <div className="shop-head">
+            <div className="shop-logo"><span>A</span> Boutique Awa</div>
+            <span style={{ fontSize: "0.82rem", color: "#5b616a" }}>{items.reduce((n, p) => n + (cart[p.id] ?? 0), 0)} article(s)</span>
+          </div>
+          <div className="shop-body">
+            <div className="products">
               {PRODUCTS.map((p) => (
-                <div key={p.id} className="spread">
-                  <div className="product">
-                    <div className="product-img" aria-hidden="true">{p.emoji}</div>
-                    <div>
-                      <strong>{p.name}</strong>
-                      <div className="price">{fcfa(p.price)}</div>
+                <div key={p.id} className="product">
+                  <div className="product-visual" style={{ background: p.bg }} aria-hidden="true">{p.emoji}</div>
+                  <div className="product-info">
+                    <span className="product-name">{p.name}</span>
+                    <span className="product-price">{fcfa(p.price)}</span>
+                    <div className="qty" role="group" aria-label={`Quantité de ${p.name}`}>
+                      <button aria-label={`Retirer ${p.name}`} onClick={() => qty(p.id, -1)}>−</button>
+                      <span>{cart[p.id] ?? 0}</span>
+                      <button aria-label={`Ajouter ${p.name}`} onClick={() => qty(p.id, 1)}>+</button>
                     </div>
-                  </div>
-                  <div className="row">
-                    <button className="btn btn-sm" aria-label={`Retirer ${p.name}`} onClick={() => setCart((c) => ({ ...c, [p.id]: Math.max(0, (c[p.id] ?? 0) - 1) }))}>−</button>
-                    <span style={{ minWidth: 20, textAlign: "center" }}>{cart[p.id] ?? 0}</span>
-                    <button className="btn btn-sm" aria-label={`Ajouter ${p.name}`} onClick={() => setCart((c) => ({ ...c, [p.id]: (c[p.id] ?? 0) + 1 }))}>+</button>
                   </div>
                 </div>
               ))}
             </div>
-            <div className="spread" style={{ borderTop: "1px solid var(--border)", marginTop: "1rem", paddingTop: "0.9rem" }}>
-              <strong>Total</strong>
-              <strong style={{ fontSize: "1.2rem" }}>{fcfa(total)}</strong>
-            </div>
-            <p className="small muted" style={{ marginTop: "0.5rem", marginBottom: 0 }}>
-              Astuce démo : le simulateur refuse les montants supérieurs à 500 000 FCFA quand le scénario « solde insuffisant » est actif
-              (ajoutez le groupe électrogène).
-            </p>
-          </div>
-          <div className="stack">
-            <div className="card stack">
-              <h2>Paiement mobile</h2>
-              <div className="field">
-                <label htmlFor="dproj">Projet Hifrica de la boutique</label>
-                <select id="dproj" className="input" value={projectId} onChange={(e) => setProjectId(e.target.value)}>
-                  {projects.map((p) => (
-                    <option key={p.id} value={p.id}>{p.name}</option>
-                  ))}
-                </select>
-              </div>
-              <div className="field">
-                <label htmlFor="dkey">Clé de test</label>
-                <input id="dkey" className="input mono" value={key} onChange={(e) => setKey(e.target.value)} placeholder="sk_test_…" autoComplete="off" spellCheck={false} />
-                {!key && detail && (
-                  <span className="hint">
-                    Créez une clé dans <Link to={`/app/projets/${projectId}?onglet=cles`}>l'onglet Clés</Link> : elle sera reprise ici automatiquement.
-                  </span>
+            <div className="checkout">
+              <h3>Récapitulatif</h3>
+              <div style={{ marginTop: "0.6rem" }}>
+                {items.length === 0 ? (
+                  <p style={{ fontSize: "0.84rem", color: "#5b616a" }}>Votre panier est vide.</p>
+                ) : (
+                  items.map((p) => (
+                    <div key={p.id} className="line">
+                      <span>{cart[p.id]} × {p.name}</span>
+                      <span>{fcfa(p.price * (cart[p.id] ?? 0))}</span>
+                    </div>
+                  ))
                 )}
+                <div className="line"><span>Livraison</span><span>Offerte</span></div>
+                <div className="line total"><span>Total</span><span>{fcfa(total)}</span></div>
               </div>
-              <div className="spread">
-                <span className="small">
-                  Scénario actif : {scenario ? <span className="badge badge-warn">{scenario}</span> : <span className="badge badge-ok">nominal</span>}
-                </span>
-                <button className="btn btn-sm" onClick={toggleScenario} disabled={switching || !detail}>
-                  {scenario === "solde-insuffisant" ? "Revenir au nominal" : "Simuler un solde insuffisant"}
-                </button>
-              </div>
-              <button className="btn btn-primary btn-lg btn-block" disabled={paying || total === 0 || !key.trim()} onClick={pay}>
-                {paying ? <Spinner /> : `Payer ${fcfa(total)}`}
+              <button className="pay-btn" disabled={paying || total === 0 || !key.trim() || !active} onClick={pay} aria-label={`Payer par mobile money ${fcfa(total)}`}>
+                {paying ? <><Spinner /> Paiement en cours…</> : <><span className="hide-xs">Payer par mobile money ·&nbsp;</span><span className="show-xs">Payer&nbsp;</span>{fcfa(total)}</>}
               </button>
+              {outcome && (
+                <div className={`pay-result ${outcome.cls}`} role="status">
+                  <strong>{outcome.title}</strong>
+                  <div style={{ marginTop: "0.2rem" }}>{outcome.text}</div>
+                </div>
+              )}
+              <p style={{ fontSize: "0.72rem", color: "#8a8f96", marginTop: "0.8rem" }}>
+                Démo : avec « Solde insuffisant », les paniers de plus de 500 000 FCFA sont refusés (ajoutez le groupe électrogène).
+              </p>
             </div>
-            {outcome && result && (
-              <div className="card stack">
-                <Alert kind={outcome.kind}>
-                  <strong>{outcome.title}</strong> {outcome.text}
-                </Alert>
-                <div className="spread small">
-                  <span>
-                    Réponse du simulateur : <StatusCode status={result.status} /> en {result.durationMs} ms
-                  </span>
-                </div>
-                <div className="codeblock receipt">
-                  <pre>{JSON.stringify(result.body, null, 2)}</pre>
-                </div>
-              </div>
+          </div>
+        </div>
+      </div>
+
+      {(result || paying) && (
+        <div className="panel" style={{ marginTop: "1rem" }}>
+          <div className="panel-head">
+            <h2>Ce que l'app de la boutique a reçu</h2>
+            {result && (
+              <span className="row small muted">
+                <StatusCode status={result.status} /> · {result.durationMs} ms
+              </span>
             )}
+          </div>
+          <div className="panel-body">
+            {paying || !result ? <Skeleton h={80} /> : <JsonView title={`POST /${SIMULATOR}/v1/checkout`} value={result.body} />}
           </div>
         </div>
       )}
@@ -205,18 +232,14 @@ export function DemoShop() {
   );
 }
 
-function interpret(r: SendResult): { kind: "ok" | "warn" | "err"; title: string; text: string } {
+function interpret(r: SendResult): { cls: string; title: string; text: string } {
   const body = (r.body ?? {}) as { status?: string; error?: string };
   if (r.status === 201 || r.status === 200) {
-    return {
-      kind: "ok",
-      title: "Paiement initié.",
-      text: `Statut « ${body.status ?? "pending"} » : le client doit valider sur son téléphone ; la boutique sera notifiée par webhook signé.`,
-    };
+    return { cls: "pay-ok", title: "Paiement initié ✓", text: `Statut « ${body.status ?? "pending"} » : le client valide sur son téléphone, puis la boutique reçoit un webhook signé.` };
   }
   if (r.status === 402) {
-    return { kind: "warn", title: "Paiement refusé : solde insuffisant.", text: "La boutique affiche l'échec et propose un autre moyen de paiement, sans planter." };
+    return { cls: "pay-ko", title: "Paiement refusé : solde insuffisant", text: "La boutique affiche l'échec et propose un autre moyen de paiement, sans planter." };
   }
-  if (r.status === 401) return { kind: "err", title: "Clé refusée.", text: "La clé de test est invalide ou révoquée." };
-  return { kind: "err", title: `Erreur ${r.status}.`, text: body.error ?? "Réponse inattendue du simulateur." };
+  if (r.status === 401) return { cls: "pay-err", title: "Clé refusée", text: "La clé de test est invalide ou révoquée." };
+  return { cls: "pay-err", title: `Erreur ${r.status}`, text: body.error ?? "Réponse inattendue du simulateur." };
 }

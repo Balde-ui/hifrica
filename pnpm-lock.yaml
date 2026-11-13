@@ -66,6 +66,12 @@ importers:
 
   apps/web:
     dependencies:
+      '@fontsource-variable/inter':
+        specifier: 5.1.1
+        version: 5.1.1
+      '@fontsource-variable/sora':
+        specifier: 5.1.1
+        version: 5.1.1
       '@hifrica/shared':
         specifier: workspace:*
         version: link:../../packages/shared
@@ -772,6 +778,12 @@ packages:
 
   '@fastify/proxy-addr@5.1.2':
     resolution: {integrity: sha512-uqB4QsgVoro0XDC+DIftIMGXHdBPn+lK6Ek3xXAIxPMCJfqxnbtyEoMCm2KPUVOuIosd7Cyw9HawEqMFM/UA+g==}
+
+  '@fontsource-variable/inter@5.1.1':
+    resolution: {integrity: sha512-OpXFTmiH6tHkYijMvQTycFKBLK4X+SRV6tet1m4YOUH7SzIIlMqDja+ocDtiCA72UthBH/vF+3ZtlMr2rN/wIw==}
+
+  '@fontsource-variable/sora@5.1.1':
+    resolution: {integrity: sha512-4/lwIdsyjFy13GM77TH6tMAaUezpB+yX0JmGaWMLcXbpkQKrO8GrldC5D393ttHTkfzMawE7nPBO0NxW0UUGSA==}
 
   '@ioredis/commands@2.0.0':
     resolution: {integrity: sha512-vrx0AE/T0h7cRZwfo1M39Cr+ZhZrkf0V8mQN75wucKCxCLD9l/VX6no3gFvrLqD1IlG/1LtzWovqEw3t0Vr9zg==}
@@ -2103,6 +2115,10 @@ snapshots:
     dependencies:
       '@fastify/forwarded': 3.1.2
       ipaddr.js: 2.5.0
+
+  '@fontsource-variable/inter@5.1.1': {}
+
+  '@fontsource-variable/sora@5.1.1': {}
 
   '@ioredis/commands@2.0.0': {}
 

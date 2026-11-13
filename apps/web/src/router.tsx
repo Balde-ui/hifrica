@@ -53,12 +53,11 @@ export function match(pattern: string, path: string): Record<string, string> | n
 }
 
 export function Link({ to, children, className, ...rest }: { to: string; children: ReactNode } & AnchorHTMLAttributes<HTMLAnchorElement>) {
-  const { navigate, path } = useRouter();
-  const active = to === path || (to !== "/" && path.startsWith(to + "/"));
+  const { navigate } = useRouter();
   return (
     <a
       href={to}
-      className={[className, active ? "active" : ""].filter(Boolean).join(" ") || undefined}
+      className={className}
       onClick={(e) => {
         if (e.metaKey || e.ctrlKey || e.shiftKey || e.button !== 0) return;
         e.preventDefault();

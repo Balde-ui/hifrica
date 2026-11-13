@@ -260,7 +260,9 @@ export function registerPlatformRoutes(app: FastifyInstance, opts: PlatformOptio
           name: projects.name,
           webhookUrl: projects.webhookUrl,
           createdAt: projects.createdAt,
-          activeKeys: sql<number>`(SELECT count(*)::int FROM ${apiKeys} WHERE ${apiKeys.projectId} = ${projects.id} AND ${apiKeys.revokedAt} IS NULL)`,
+          // Noms qualifiés écrits explicitement : dans une sous-requête, Drizzle rendrait projects.id par
+          // "id" seul, que PostgreSQL rattacherait à api_keys.id (le compte valait toujours 0).
+          activeKeys: sql<number>`(SELECT count(*)::int FROM "api_keys" k WHERE k."project_id" = "projects"."id" AND k."revoked_at" IS NULL)`,
         })
         .from(projects)
         .where(eq(projects.ownerId, user.id))
