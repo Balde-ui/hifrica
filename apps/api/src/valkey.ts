@@ -12,11 +12,19 @@ let url: string | undefined;
 let logger: Pick<FastifyBaseLogger, "error"> = console;
 let shared: Redis | null = null;
 
-/** À appeler au démarrage, avant tout usage de sharedValkey/runCommand. */
+/**
+ * À appeler au démarrage, avant tout usage de sharedValkey/runCommand. Connecte le client partagé
+ * tout de suite (pas à la première commande) : sans ça, le tout premier appel reçu après le démarrage
+ * du serveur peut tomber sur une connexion encore "connecting" et échouer en 503 pour rien.
+ */
 export function registerValkey(app: FastifyInstance, env: Record<string, string | undefined> = process.env): void {
   url = env.VALKEY_URL || undefined;
   logger = app.log;
-  if (!url) app.log.warn("VALKEY_URL absente : flux SSE et actions du téléphone désactivés");
+  if (!url) {
+    app.log.warn("VALKEY_URL absente : flux SSE et actions du téléphone désactivés");
+  } else {
+    sharedValkey();
+  }
   app.addHook("onClose", async () => {
     shared?.disconnect();
     shared = null;
