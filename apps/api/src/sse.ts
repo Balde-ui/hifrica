@@ -13,6 +13,7 @@ export function registerSse(app: FastifyInstance): void {
     const projectId = req.params.id;
 
     const user = await requireUser(req);
+    if (!user) return reply.code(401).send({ error: "unauthorized" });
     const owns = await assertProjectOwner(user, projectId);
     // 404, pas 403 : ne révèle pas qu'un projet existe s'il n'appartient pas à l'utilisateur.
     if (!owns) return reply.code(404).send({ error: "project_not_found" });
