@@ -184,3 +184,14 @@ textarea.input { height: auto; min-height: 110px; padding: 0.6rem 0.7rem; resize
 .kv { display: grid; grid-template-columns: max-content 1fr; gap: 0.3rem 1rem; font-size: 0.9rem; }
 .kv dt { color: var(--muted); }
 .kv dd { margin: 0; word-break: break-word; }
+
+/* ---- Mobile : la navigation passe sur une deuxième ligne défilante ---- */
+@media (max-width: 760px) {
+  .topbar { flex-wrap: wrap; height: auto; padding: 0.5rem 1rem 0; row-gap: 0.25rem; }
+  .brand { flex: 1; }
+  .nav { order: 3; flex-basis: 100%; padding-bottom: 0.4rem; }
+  .userbox span { display: none; }
+  .userbox .btn { height: 32px; padding: 0 0.6rem; font-size: 0.85rem; }
+  .main { padding: 1rem 1rem 2.5rem; }
+  .auth-wrap { min-height: auto; }
+}
