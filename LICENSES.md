@@ -5,7 +5,7 @@ Généré par pnpm licenses:md, ne pas modifier à la main
 Déclaration exigée par l'article 6 du règlement CADEV 2026.
 Toutes les licences des dépendances npm de production sont permissives ; aucune licence à réciprocité (GPL, AGPL, LGPL).
 
-La liste npm est produite par `pnpm licenses list --json --prod` (dépendances directes et indirectes de production de tout le monorepo) via `pnpm licenses:md` ; la CI vérifie à chaque push qu'elle est à jour (`pnpm licenses:md:check`) et qu'aucune licence n'est interdite (`pnpm licenses:check`). Les paquets natifs propres à une plateforme sont ceux de Linux x64, comme en CI. Les sections hors npm se modifient dans `scripts/licenses-non-npm.md`.
+La liste npm est produite par `pnpm licenses list --json --prod` (dépendances directes et indirectes de production de tout le monorepo) via `pnpm licenses:md` ; la CI vérifie à chaque push qu'elle est à jour (`pnpm licenses:md:check`) et qu'aucune licence n'est interdite (`pnpm licenses:check`). Les binaires propres à une plateforme sont regroupés par famille, pour que le fichier soit identique sous Linux, macOS et Windows. Les sections hors npm se modifient dans `scripts/licenses-non-npm.md`.
 
 ## Images Docker et services
 
@@ -23,13 +23,15 @@ La liste npm est produite par `pnpm licenses list --json --prod` (dépendances d
 
 TypeScript (Apache 2.0), Vite (MIT), @vitejs/plugin-react (MIT), esbuild (MIT), types `@types/*` (MIT). Non embarqués dans les images de production de l'API et du moteur.
 
-## Dépendances npm de production (121 paquets)
+## Dépendances npm de production (119 paquets et 3 familles de binaires de plateforme)
 
 ### Résumé par licence
 
-| Licence | Paquets |
+Une famille de binaires de plateforme compte pour une ligne.
+
+| Licence | Lignes |
 | --- | --- |
-| MIT | 104 |
+| MIT | 105 |
 | Apache-2.0 | 5 |
 | ISC | 5 |
 | BSD-3-Clause | 4 |
@@ -52,7 +54,6 @@ TypeScript (Apache 2.0), Vite (MIT), @vitejs/plugin-react (MIT), esbuild (MIT), 
 | @drizzle-team/brocli | 0.10.2 | Apache-2.0 | <https://github.com/drizzle-team/brocli> |
 | @esbuild-kit/core-utils | 3.3.2 | MIT | <https://github.com/esbuild-kit/core-utils> |
 | @esbuild-kit/esm-loader | 2.6.5 | MIT | <https://github.com/esbuild-kit/esm-loader> |
-| @esbuild/linux-x64 | 0.18.20, 0.25.12, 0.28.2 | MIT | <https://github.com/evanw/esbuild> |
 | @fastify/ajv-compiler | 4.0.7 | MIT | <https://github.com/fastify/ajv-compiler> |
 | @fastify/deepmerge | 3.2.4 | MIT | <https://github.com/fastify/deepmerge> |
 | @fastify/error | 4.2.1 | MIT | <https://github.com/fastify/fastify-error> |
@@ -63,7 +64,6 @@ TypeScript (Apache 2.0), Vite (MIT), @vitejs/plugin-react (MIT), esbuild (MIT), 
 | @fontsource-variable/inter | 5.1.1 | OFL-1.1 | <https://github.com/fontsource/font-files/tree/HEAD/fonts/variable/inter> |
 | @fontsource-variable/sora | 5.1.1 | OFL-1.1 | <https://github.com/fontsource/font-files/tree/HEAD/fonts/variable/sora> |
 | @ioredis/commands | 2.0.0 | MIT | <https://github.com/ioredis/commands> |
-| @msgpackr-extract/msgpackr-extract-linux-x64 | 3.0.7 | MIT | <https://github.com/kriszyp/msgpackr-extract> |
 | @noble/ciphers | 2.4.0 | MIT | <https://github.com/paulmillr/noble-ciphers> |
 | @noble/hashes | 2.4.0 | MIT | <https://github.com/paulmillr/noble-hashes> |
 | @pinojs/redact | 0.4.0 | MIT | <https://github.com/pinojs/redact> |
@@ -161,3 +161,13 @@ TypeScript (Apache 2.0), Vite (MIT), @vitejs/plugin-react (MIT), esbuild (MIT), 
 | xtend | 4.0.2 | MIT | <https://github.com/Raynos/xtend> |
 | yaml | 2.9.1 | ISC | <https://github.com/eemeli/yaml> |
 | zod | 4.6.7 | MIT | <https://github.com/colinhacks/zod> |
+
+### Binaires propres à une plateforme
+
+Une seule variante est installée, selon le système et le processeur de la machine.
+
+| Paquet | Rôle | Licence | Dépôt |
+| --- | --- | --- | --- |
+| `@esbuild/<plateforme>` | binaire esbuild de la plateforme | MIT | <https://github.com/evanw/esbuild> |
+| `@msgpackr-extract/msgpackr-extract-<plateforme>` | binaire msgpackr-extract de la plateforme | MIT | <https://github.com/kriszyp/msgpackr-extract> |
+| `fsevents` | module natif de tsx, macOS uniquement | MIT | <https://github.com/fsevents/fsevents> |
