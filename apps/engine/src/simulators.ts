@@ -5,6 +5,10 @@ import { validateSimulatorYaml } from "@hifrica/shared";
 export interface PhoneBlock {
   screen?: "confirm-payment" | "sms" | "notification";
   text?: string;
+  /** Expéditeur affiché dans la boîte SMS (gabarit {{...}} accepté). Requis avec screen: "sms". */
+  from?: string;
+  /** Destinataire du SMS (gabarit {{...}} accepté). Requis avec screen: "sms". */
+  to?: string;
 }
 
 export interface WebhookBlock {

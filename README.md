@@ -128,6 +128,16 @@ Les variables :
 
 Une valeur réduite à une seule variable garde son type : `amount: "{{body.amount}}"` reste le nombre `5000` si l'app a envoyé un nombre. Une variable inconnue donne une chaîne vide.
 
+Un bloc `phone` peut aussi envoyer un SMS plutôt qu'afficher un écran de confirmation (`screen: sms`), avec `from` et `to` en plus de `text` — tous trois acceptent les mêmes variables. Contrairement à `confirm-payment`, aucune session n'est créée : le SMS est une notification à sens unique, reçue immédiatement sur le téléphone simulé.
+
+```yaml
+phone:
+  screen: sms
+  from: HIFRICA
+  to: "{{body.phone}}"
+  text: "Votre code de vérification Hifrica est {{response.code}}."
+```
+
 ### Simulateur USSD
 
 Le format est prêt et validé ; l'exécution des menus USSD dans le moteur est **en cours**.
