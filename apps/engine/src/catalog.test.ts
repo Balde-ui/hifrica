@@ -4,7 +4,7 @@ import { readFileSync } from "node:fs";
 import { describe, it } from "node:test";
 import { DbOperationError, type Database, type ExecutableSimulator } from "@hifrica/db";
 import { projectChannel, validateSimulatorYaml, type PhoneSession } from "@hifrica/shared";
-import { createCatalog, DB_TIMEOUT_MS, EngineUnavailableError, FOUND_TTL_MS, MAX_CACHE_ENTRIES, MISSING_TTL_MS, toResolver } from "./catalog.js";
+import { createCatalog, DB_TIMEOUT_MS, EngineUnavailableError, FOUND_TTL_MS, hasWellFormedTestKey, InvalidTestKeyError, MAX_CACHE_ENTRIES, MISSING_TTL_MS, toResolver } from "./catalog.js";
 import { handleConfirmationMessage } from "./confirmations.js";
 import type { SessionStore } from "./phone-session.js";
 import type { Simulator } from "./simulators.js";
@@ -190,6 +190,20 @@ describe("catalogue des simulateurs (fichiers puis publiés)", () => {
     await c.resolve("sim-aaa"); // la plus ancienne était sortie : relue
     assert.equal(reads.length, 5);
     assert.equal(MAX_CACHE_ENTRIES, 500);
+  });
+
+  it("requête d'un client sans clé bien formée : InvalidTestKeyError sans lecture ; fichiers et appels internes non concernés", async () => {
+    const { c, reads } = catalog({ "boutique-qr": row("boutique-qr") });
+    const req = (authorization?: string) => ({ headers: authorization === undefined ? {} : { authorization } });
+    for (const h of [undefined, "", "Bearer sk_test_local", `Bearer sk_test_${"d".repeat(42)}`]) {
+      await assert.rejects(c.resolve("boutique-qr", req(h)), (err) => err instanceof InvalidTestKeyError);
+    }
+    assert.deepEqual(reads, []);
+    assert.equal(await c.resolve(fileSim.name, req()), fileSim, "un fichier ne demande pas de clé ici");
+    assert.equal((await c.resolve("boutique-qr", req(`Bearer sk_test_${"d".repeat(43)}`)))?.name, "boutique-qr");
+    assert.equal((await c.resolve("boutique-qr"))?.name, "boutique-qr", "A4 : sans requête, pas de contrôle de clé");
+    assert.equal(reads.length, 1);
+    assert.equal(hasWellFormedTestKey(req(`Bearer sk_test_${"A1b2".repeat(10)}xyz`)), true);
   });
 
   it("toResolver : une Map se comporte comme avant", async () => {

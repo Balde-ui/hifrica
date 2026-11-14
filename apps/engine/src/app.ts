@@ -1,9 +1,10 @@
 // Construction du moteur de simulation (routes et crochets), sans écoute réseau : voir index.ts.
 import { randomUUID } from "node:crypto";
-import Fastify, { type FastifyInstance, type FastifyReply, type FastifyServerOptions } from "fastify";
+import { isSlug } from "@hifrica/db";
+import Fastify, { type FastifyInstance, type FastifyReply, type FastifyRequest, type FastifyServerOptions } from "fastify";
 import { authenticate, resolveScenario } from "./auth.js";
 import { appPublicUrl, catalogueUrl, homeDocument, isBrowserRequest, redirectBrowser } from "./browser.js";
-import { createCatalog, isEngineUnavailable, type CatalogOptions } from "./catalog.js";
+import { createCatalog, isEngineUnavailable, isInvalidTestKey, type CatalogOptions } from "./catalog.js";
 import type { HifricaRequestContext } from "./context.js";
 import { registerConfirmations } from "./confirmations.js";
 import { publishEvent } from "./events.js";
@@ -48,19 +49,27 @@ export function buildApp({ simulators: given, env = process.env, logger = true, 
   const simulators = given ?? loadSimulators(env.SIMULATORS_DIR ?? "/simulators", (m) => app.log.info(m));
   // Fichiers de simulators/ d'abord, puis simulateurs publiés depuis l'éditeur (catalog.ts, avec cache).
   const catalog = createCatalog({ files: simulators, log: app.log.child({ component: "catalog" }), ...catalogOptions });
-  /** Simulateur du slug, null s'il n'existe pas, "unavailable" si la base ne répond pas. */
-  const resolveSimulator = async (slug: string): Promise<Simulator | null | "unavailable"> => {
+  /**
+   * Simulateur du slug pour la requête d'un client : null s'il n'existe pas, "unavailable" si la base ne
+   * répond pas, "invalid_key" si le slug n'est pas un fichier et que la clé est absente ou mal formée
+   * (aucune lecture en base dans ce cas). Les fichiers de simulators/ ne passent pas par ce contrôle.
+   */
+  const resolveForRequest = async (req: FastifyRequest, slug: string): Promise<Simulator | null | "unavailable" | "invalid_key"> => {
     try {
-      return await catalog.resolve(slug);
+      return await catalog.resolve(slug, req);
     } catch (err) {
       if (isEngineUnavailable(err)) return "unavailable";
+      if (isInvalidTestKey(err)) return "invalid_key";
       throw err;
     }
   };
-  /** Navigateur : fiche du simulateur s'il existe, sinon le catalogue (aussi quand la base ne répond pas). */
-  const redirectToCatalogue = async (reply: FastifyReply, slug: string) => {
-    const sim = await resolveSimulator(slug);
-    return redirectBrowser(reply, catalogueUrl(appUrl, sim && sim !== "unavailable" ? sim.name : undefined));
+  /**
+   * Navigateur, sans aucune lecture en base : un fichier de simulators/ → sa fiche ; tout autre slug valide
+   * → /catalogue/<slug> (la fiche dit elle-même s'il est publié) ; sinon le catalogue.
+   */
+  const redirectToCatalogue = (reply: FastifyReply, slug: string) => {
+    const file = simulators.get(slug);
+    return redirectBrowser(reply, catalogueUrl(appUrl, file ? file.name : isSlug(slug) ? slug : undefined));
   };
   // A4 : abonnement aux phone.confirm / phone.reject, qui déclenchent les webhooks « on: ».
   registerConfirmations(app, catalog.resolve);
@@ -83,7 +92,9 @@ export function buildApp({ simulators: given, env = process.env, logger = true, 
   app.all<{ Params: { simulator: string; "*": string } }>("/:simulator/*", async (req, reply) => {
     // Navigateur (GET, Accept text/html, sans Authorization) : fiche du simulateur, avant toute authentification.
     if (isBrowserRequest(req)) return redirectToCatalogue(reply, req.params.simulator);
-    const sim = await resolveSimulator(req.params.simulator);
+    const sim = await resolveForRequest(req, req.params.simulator);
+    // Slug absent des fichiers et clé absente ou mal formée : 401 sans lecture en base.
+    if (sim === "invalid_key") return reply.code(401).send({ error: "invalid_test_key" });
     // Base injoignable : le simulateur existe peut-être, on ne répond pas « inconnu ».
     if (sim === "unavailable") return reply.code(503).send({ error: "engine_unavailable" });
     if (!sim || sim.kind !== "http") return reply.code(404).send({ error: "simulator_not_found" });

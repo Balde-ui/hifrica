@@ -8,9 +8,13 @@
 // Base injoignable ou muette plus de 3 s → EngineUnavailableError (les routes répondent 503
 // engine_unavailable, pas 404).
 // Sans base (développement local) : les fichiers seulement, comme avant.
+// Aucune lecture en base sans clé bien formée (revue C) : pour un slug absent des fichiers, la requête
+// d'un client doit porter « Bearer sk_test_ + 43 caractères » (KEY_HEADER d'auth.ts), sinon
+// InvalidTestKeyError (401) sans SQL. La clé elle-même est ensuite vérifiée par authenticate.
 import { getExecutableSimulator, isDbOperationError, isSlug, type Database, type ExecutableSimulator } from "@hifrica/db";
 import { validateSimulatorYaml } from "@hifrica/shared";
-import type { FastifyBaseLogger } from "fastify";
+import type { FastifyBaseLogger, FastifyRequest } from "fastify";
+import { KEY_HEADER } from "./auth.js";
 import { getDb } from "./db.js";
 import type { Simulator } from "./simulators.js";
 
@@ -32,7 +36,30 @@ export function isEngineUnavailable(err: unknown): err is EngineUnavailableError
   return err instanceof EngineUnavailableError;
 }
 
-export type SimulatorResolver = (slug: string) => Promise<Simulator | null>;
+/** Slug absent des fichiers et requête sans clé bien formée : 401, sans lecture en base. */
+export class InvalidTestKeyError extends Error {
+  override readonly name = "InvalidTestKeyError";
+  constructor() {
+    super("clé de test absente ou mal formée");
+  }
+}
+
+export function isInvalidTestKey(err: unknown): err is InvalidTestKeyError {
+  return err instanceof InvalidTestKeyError;
+}
+
+/** Format de l'en-tête Authorization seulement (aucun SQL) : la clé est vérifiée ensuite par authenticate. */
+export function hasWellFormedTestKey(req: Pick<FastifyRequest, "headers">): boolean {
+  const header = req.headers.authorization;
+  return typeof header === "string" && KEY_HEADER.test(header);
+}
+
+/**
+ * `req` : requête d'un client (routes HTTP et USSD) ; sans clé bien formée, un slug absent des fichiers
+ * lève InvalidTestKeyError sans lecture en base. Absent pour les appels internes (A4 : session déjà
+ * rattachée à un projet authentifié).
+ */
+export type SimulatorResolver = (slug: string, req?: Pick<FastifyRequest, "headers">) => Promise<Simulator | null>;
 /** Ce qu'acceptent les modules qui cherchent un simulateur : une Map (tests, fichiers seuls) ou un résolveur. */
 export type SimulatorSource = Map<string, Simulator> | SimulatorResolver;
 
@@ -111,11 +138,12 @@ export function createCatalog(opts: CatalogOptions): Catalog {
     return sim;
   }
 
-  async function resolve(slug: string): Promise<Simulator | null> {
+  async function resolve(slug: string, req?: Pick<FastifyRequest, "headers">): Promise<Simulator | null> {
     const file = files.get(slug);
     if (file) return file;
     const db = dbOf();
     if (!db || !isSlug(slug)) return null;
+    if (req && !hasWellFormedTestKey(req)) throw new InvalidTestKeyError();
 
     const hit = cache.get(slug);
     if (hit && hit.expiresAt > now()) return hit.sim;

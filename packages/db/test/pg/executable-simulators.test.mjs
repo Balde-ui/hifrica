@@ -30,9 +30,12 @@ describe("getExecutableSimulator", { skip: SKIP_REASON }, () => {
 
   const newSlug = () => `exec-${randomBytes(4).toString("hex")}`;
   /** Simulateur et ses versions ; `current` : version courante (ou null pour aucune). */
-  async function insertSimulator({ status = "draft", kind = "http", versions = ["1.0.0"], current = versions.at(-1) } = {}) {
+  async function insertSimulator({ status = "draft", kind = "http", versions = ["1.0.0"], current = versions.at(-1), published = true } = {}) {
     const slug = newSlug();
-    const { rows } = await client.query("INSERT INTO simulators (slug, kind, status) VALUES ($1, $2, $3) RETURNING id", [slug, kind, status]);
+    const { rows } = await client.query(
+      "INSERT INTO simulators (slug, kind, status, published_at) VALUES ($1, $2, $3, CASE WHEN $4::boolean THEN now() END) RETURNING id",
+      [slug, kind, status, published],
+    );
     for (const v of versions) {
       await client.query("INSERT INTO simulator_versions (simulator_id, version, yaml, is_current) VALUES ($1, $2, $3, $4)", [
         rows[0].id,
@@ -53,6 +56,12 @@ describe("getExecutableSimulator", { skip: SKIP_REASON }, () => {
 
   test("statut unpublished → null", async () => {
     assert.equal(await getExecutableSimulator(db, await insertSimulator({ status: "unpublished" })), null);
+  });
+
+  test("statut exécutable mais published_at NULL (jamais publié) → null", async () => {
+    for (const status of ["draft", "to_verify", "verified"]) {
+      assert.equal(await getExecutableSimulator(db, await insertSimulator({ status, published: false })), null, status);
+    }
   });
 
   test("simulateur sans version courante → null", async () => {

@@ -14,7 +14,7 @@ import type { FastifyInstance } from "fastify";
 import { authenticate } from "./auth.js";
 import type { HifricaRequestContext } from "./context.js";
 import { publishEvent } from "./events.js";
-import { isEngineUnavailable, toResolver, type SimulatorSource } from "./catalog.js";
+import { isEngineUnavailable, isInvalidTestKey, toResolver, type SimulatorSource } from "./catalog.js";
 import type { Simulator, UssdMenu } from "./simulators.js";
 import { runCommand } from "./valkey.js";
 
@@ -57,8 +57,9 @@ export function registerUssd(app: FastifyInstance, simulators: SimulatorSource):
     async (req, reply) => {
       let sim: Simulator | null;
       try {
-        sim = await resolveSimulator(req.params.simulator);
+        sim = await resolveSimulator(req.params.simulator, req);
       } catch (err) {
+        if (isInvalidTestKey(err)) return reply.code(401).send({ error: "invalid_test_key" });
         if (!isEngineUnavailable(err)) throw err;
         return reply.code(503).send({ error: "engine_unavailable" });
       }

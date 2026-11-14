@@ -1,7 +1,7 @@
 // Simulateurs publiés que le moteur peut exécuter (contrat Dev A / Dev C).
 // Le moteur sert d'abord les fichiers de simulators/ ; à défaut, il lit ici la version courante d'un
 // simulateur publié depuis l'éditeur, puis la revalide avec le schéma partagé avant de l'exécuter.
-import { and, eq, inArray } from "drizzle-orm";
+import { and, eq, inArray, sql } from "drizzle-orm";
 import type { Database } from "./client.js";
 import { safeDbCall } from "./errors.js";
 import { SIMULATOR_KINDS, SIMULATOR_STATUSES, simulators, simulatorVersions } from "./schema/simulators.js";
@@ -27,7 +27,8 @@ export interface ExecutableSimulator {
 }
 
 /**
- * Version courante d'un simulateur publié exécutable, ou null (inconnu, dépublié, sans version courante).
+ * Version courante d'un simulateur publié exécutable, ou null (inconnu, dépublié, jamais publié
+ * — published_at NULL, même condition que le catalogue de l'API —, ou sans version courante).
  * Slug invalide → null sans requête SQL. Erreur de base → DbOperationError ("get_executable_simulator").
  */
 export async function getExecutableSimulator(db: Database, slug: string): Promise<ExecutableSimulator | null> {
@@ -43,7 +44,14 @@ export async function getExecutableSimulator(db: Database, slug: string): Promis
       })
       .from(simulators)
       .innerJoin(simulatorVersions, and(eq(simulatorVersions.simulatorId, simulators.id), eq(simulatorVersions.isCurrent, true)))
-      .where(and(eq(simulators.slug, slug), inArray(simulators.status, [...EXECUTABLE_SIMULATOR_STATUSES])))
+      .where(
+        and(
+          eq(simulators.slug, slug),
+          inArray(simulators.status, [...EXECUTABLE_SIMULATOR_STATUSES]),
+          // Même condition que le catalogue de l'API (apps/api/src/platform.ts) : jamais publié = invisible.
+          sql`${simulators.publishedAt} IS NOT NULL`,
+        ),
+      )
       .limit(1),
   );
   if (!row || !isExecutableStatus(row.status)) return null;

@@ -89,11 +89,67 @@ describe("moteur : simulateurs publiés depuis l'éditeur", () => {
     });
   }
 
-  it("publié : la vraie clé reste obligatoire (401 sans clé)", async () => {
+  // Revue C : aucune lecture en base sans clé bien formée (Bearer sk_test_ + 43 caractères base62).
+  const MALFORMED: [string, Record<string, string>][] = [
+    ["sans clé", {}],
+    ["Authorization vide", { authorization: "" }],
+    ["clé trop courte", { authorization: "Bearer sk_test_local" }],
+    ["42 caractères", { authorization: `Bearer sk_test_${"c".repeat(42)}` }],
+    ["44 caractères", { authorization: `Bearer sk_test_${"c".repeat(44)}` }],
+    ["caractère hors base62", { authorization: `Bearer sk_test_${"c".repeat(42)}-` }],
+    ["sk_live_", { authorization: `Bearer sk_live_${"c".repeat(43)}` }],
+    ["« bearer » en minuscules", { authorization: `bearer sk_test_${"c".repeat(43)}` }],
+    ["double espace", { authorization: `Bearer  sk_test_${"c".repeat(43)}` }],
+    ["schéma Basic", { authorization: "Basic dXNlcjpwYXNz" }],
+  ];
+  for (const [label, headers] of MALFORMED) {
+    it(`${label} → 401 invalid_test_key sans aucune lecture en base (slug publié ou inconnu, HTTP et USSD)`, async () => {
+      const e = engine({ "boutique-qr": row("boutique-qr"), "ussd-boutique": row("ussd-boutique", { kind: "ussd", yaml: rename(USSD_YAML, "ussd-boutique") }) });
+      for (const slug of ["boutique-qr", "jamais-publie"]) {
+        const { res, hifrica } = await e.checkout(slug, headers);
+        assert.equal(res.statusCode, 401, slug);
+        assert.deepEqual(res.json(), { error: "invalid_test_key" });
+        assert.equal(hifrica, null, "rien de journalisé");
+        const get = await e.call({ method: "GET", url: `/${slug}/v1/checkout/x`, headers: { ...headers, accept: "application/json" } });
+        assert.equal(get.res.statusCode, 401);
+      }
+      for (const slug of ["ussd-boutique", "ussd-inconnu"]) {
+        const res = await e.call({ method: "POST", url: `/${slug}/ussd`, headers: { ...headers, "content-type": "application/json" }, payload: { text: "" } });
+        assert.equal(res.res.statusCode, 401, slug);
+        assert.deepEqual(res.res.json(), { error: "invalid_test_key" });
+      }
+      // /<slug> sans chemin, hors navigateur : le 404 de Fastify, sans lecture non plus.
+      assert.equal((await e.call({ method: "GET", url: "/boutique-qr", headers })).res.statusCode, 404);
+      assert.deepEqual(e.reads, [], "getExecutableSimulator jamais appelé");
+      await e.app.close();
+    });
+  }
+
+  it("clé bien formée → résolution (catalogue), puis authenticate comme avant", async () => {
     const e = engine({ "boutique-qr": row("boutique-qr") });
-    const { res } = await e.checkout("boutique-qr", {});
-    assert.equal(res.statusCode, 401);
-    assert.deepEqual(res.json(), { error: "invalid_test_key" });
+    assert.equal((await e.checkout("boutique-qr")).res.statusCode, 201);
+    const unknown = await e.checkout("jamais-publie");
+    assert.equal(unknown.res.statusCode, 404);
+    assert.deepEqual(unknown.res.json(), { error: "simulator_not_found" });
+    assert.deepEqual(e.reads, ["boutique-qr", "jamais-publie"]);
+    await e.app.close();
+  });
+
+  it("fichiers simulators/ inchangés : 404 avant 401, 401 sans clé, sans lecture en base", async () => {
+    const e = engine({ "mobile-money-ussd": row("mobile-money-ussd"), "paiement-mobile-generique": row("paiement-mobile-generique") });
+    // Simulateur USSD (fichier) appelé en HTTP sans clé : 404 avant toute authentification, comme avant.
+    const ussdViaHttp = await e.call({ method: "POST", url: "/mobile-money-ussd/v1/checkout", headers: { "content-type": "application/json" }, payload: {} });
+    assert.equal(ussdViaHttp.res.statusCode, 404);
+    assert.deepEqual(ussdViaHttp.res.json(), { error: "simulator_not_found" });
+    // Fichier HTTP sans clé : 401 par authenticate, comme avant (le bouchon local, sans DATABASE_URL,
+    // accepte tout « sk_test_… » : ce comportement des fichiers est lui aussi inchangé).
+    for (const [, headers] of MALFORMED.slice(0, 2)) assert.equal((await e.checkout("paiement-mobile-generique", headers)).res.statusCode, 401);
+    assert.equal((await e.checkout("paiement-mobile-generique", { authorization: "Bearer sk_test_local" })).res.statusCode, 201);
+    // Avec clé : endpoint inconnu → 404 endpoint_not_found.
+    const noEndpoint = await e.call({ method: "GET", url: "/paiement-mobile-generique/v1/inconnu", headers: KEY });
+    assert.equal(noEndpoint.res.statusCode, 404);
+    assert.equal(noEndpoint.res.json().error, "endpoint_not_found");
+    assert.deepEqual(e.reads, []);
     await e.app.close();
   });
 
@@ -125,10 +181,12 @@ describe("moteur : simulateurs publiés depuis l'éditeur", () => {
     assert.equal(res.statusCode, 503);
     assert.deepEqual(res.json(), { error: "engine_unavailable" });
     assert.equal(hifrica, null);
-    // Un navigateur, lui, est renvoyé vers le catalogue.
+    // Un navigateur, lui, est renvoyé vers la fiche, sans lecture en base.
+    const before = e.reads.length;
     const browser = await e.call({ method: "GET", url: "/en-panne/v1/checkout", headers: BROWSER });
     assert.equal(browser.res.statusCode, 302);
-    assert.equal(browser.res.headers.location, `${APP}/catalogue`);
+    assert.equal(browser.res.headers.location, `${APP}/catalogue/en-panne`);
+    assert.equal(e.reads.length, before);
     await e.app.close();
   });
 
@@ -144,16 +202,19 @@ describe("moteur : simulateurs publiés depuis l'éditeur", () => {
     await e.app.close();
   });
 
-  it("USSD publié : la route USSD le trouve (401 sans clé, et non 404) ; inconnu → 404 ; base en erreur → 503", async () => {
+  it("USSD publié : la route USSD le trouve avec une clé bien formée ; inconnu → 404 ; base en erreur → 503", async () => {
     const e = engine({
       "ussd-boutique": row("ussd-boutique", { kind: "ussd", yaml: rename(USSD_YAML, "ussd-boutique") }),
       "ussd-panne": new DbOperationError("get_executable_simulator", "connection"),
     });
     const ussd = (slug: string, headers: Record<string, string> = {}) =>
       e.call({ method: "POST", url: `/${slug}/ussd`, headers: { ...headers, "content-type": "application/json" }, payload: { text: "" } });
-    assert.equal((await ussd("ussd-boutique")).res.statusCode, 401);
-    assert.equal((await ussd("ussd-inconnu")).res.statusCode, 404);
-    const down = await ussd("ussd-panne");
+    // Trouvé : la route va au-delà de la résolution et de l'authentification (ni 404 ni 401).
+    const found = await ussd("ussd-boutique", KEY);
+    assert.ok(![401, 404].includes(found.res.statusCode), `statut ${found.res.statusCode}`);
+    assert.ok(e.reads.includes("ussd-boutique"));
+    assert.equal((await ussd("ussd-inconnu", KEY)).res.statusCode, 404);
+    const down = await ussd("ussd-panne", KEY);
     assert.equal(down.res.statusCode, 503);
     assert.deepEqual(down.res.json(), { error: "engine_unavailable" });
     // Un simulateur USSD publié n'est pas exécuté par la route HTTP (même règle que pour les fichiers).
@@ -161,7 +222,7 @@ describe("moteur : simulateurs publiés depuis l'éditeur", () => {
     await e.app.close();
   });
 
-  it("navigateur sur un simulateur publié → 302 vers sa fiche, sans authentification", async () => {
+  it("navigateur sans clé sur un simulateur publié → 302 vers sa fiche, sans lecture en base", async () => {
     const e = engine({ "boutique-qr": row("boutique-qr") });
     for (const url of ["/boutique-qr/v1/checkout", "/boutique-qr"]) {
       const { res, hifrica } = await e.call({ method: "GET", url, headers: BROWSER });
@@ -170,7 +231,8 @@ describe("moteur : simulateurs publiés depuis l'éditeur", () => {
       assert.equal(hifrica, null);
     }
     const unknown = await e.call({ method: "GET", url: "/pas-publie/x", headers: BROWSER });
-    assert.equal(unknown.res.headers.location, `${APP}/catalogue`);
+    assert.equal(unknown.res.headers.location, `${APP}/catalogue/pas-publie`);
+    assert.deepEqual(e.reads, [], "aucun appel à getExecutableSimulator");
     await e.app.close();
   });
 });
