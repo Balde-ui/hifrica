@@ -7,8 +7,14 @@
 //      EST le simulateur (il a "name" et "kind") ;
 //   4. contenu entouré de ```json / ```yaml → clôtures retirées, puis on recommence ;
 //   5. texte qui n'est pas du JSON mais un YAML avec "name" et "kind".
+// Réparations minimales (incident R3, suite : DeepSeek en mode JSON renvoie {"yaml": "…"} avec de VRAIS
+// retours à la ligne dans la chaîne, donc un JSON invalide) :
+//   - JSON invalide commençant par « { » : les \n, \r et \t bruts À L'INTÉRIEUR des chaînes sont échappés
+//     (parcours caractère par caractère : dans une chaîne / hors chaîne, échappements), puis on réessaie ;
+//   - phrase avant le premier « { » ou avant une ligne « name: » : ce qui précède est ignoré.
 // Rien n'est accepté ici sans validation : l'appelant passe toujours le résultat à validateSimulatorYaml.
 // Si rien ne convient, seule la FORME de la réponse est décrite (types, noms de clés), jamais son contenu.
+import { simulatorSchema } from "@hifrica/shared";
 import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
 
 /** Comment le YAML a été trouvé (journalisé : aucune donnée). */
@@ -25,6 +31,14 @@ export type ValueType = "string" | "number" | "boolean" | "null" | "array" | "ob
 /** Forme d'une réponse illisible : de quoi diagnostiquer, sans aucune valeur reçue. */
 export interface ResponseShape {
   length: number;
+  /** Premier caractère non blanc, réduit à une catégorie (jamais le caractère lui-même s'il est autre). */
+  firstChar: "{" | "[" | "n" | "`" | "autre";
+  /** Le texte contient `"yaml"`. */
+  hasYamlKey: boolean;
+  /** Retour à la ligne brut dans une chaîne JSON (parcours depuis le premier « { »). */
+  hasRawNewlineInString: boolean;
+  /** La réparation des caractères de contrôle a servi à lire la réponse. */
+  repaired: boolean;
   /** Clôture ``` en tête de réponse, et son langage normalisé. */
   fenced: boolean;
   fenceLang?: "json" | "yaml" | "other" | "none";
@@ -38,7 +52,16 @@ export interface ResponseShape {
   valueTypes?: ValueType[];
 }
 
-export type Extraction = { ok: true; yaml: string; form: ExtractionForm } | { ok: false; shape: ResponseShape };
+interface Found {
+  yaml: string;
+  form: ExtractionForm;
+  /** Caractères de contrôle bruts échappés dans les chaînes JSON. */
+  repaired: boolean;
+  /** Une phrase avant le JSON ou le YAML a été ignorée. */
+  prefixSkipped: boolean;
+}
+
+export type Extraction = ({ ok: true } & Found) | { ok: false; shape: ResponseShape };
 
 const FENCE = /^```([A-Za-z0-9_-]*)[ \t]*\r?\n?([\s\S]*?)\r?\n?[ \t]*```\s*$/;
 const SAFE_KEY = /^[A-Za-z_][A-Za-z0-9_-]{0,39}$/;
@@ -60,12 +83,73 @@ function isSimulatorObject(value: unknown): value is Record<string, unknown> {
   return isPlainObject(value) && typeof value.name === "string" && typeof value.kind === "string";
 }
 
+const SCHEMA_KEYS: ReadonlySet<string> = new Set(Object.keys(simulatorSchema.properties));
+
+/** Toutes les clés de premier niveau appartiennent au schéma (une phrase d'intro lue comme clé YAML n'y est pas). */
+function hasOnlySchemaKeys(value: Record<string, unknown>): boolean {
+  return Object.keys(value).every((k) => SCHEMA_KEYS.has(k));
+}
+
 function tryParseJson(text: string): { ok: true; value: unknown } | { ok: false } {
   try {
     return { ok: true, value: JSON.parse(text) };
   } catch {
     return { ok: false };
   }
+}
+
+interface ControlScan {
+  /** Texte où les \n, \r, \t bruts des chaînes sont échappés. */
+  text: string;
+  rawNewlines: number;
+  rawTabs: number;
+}
+
+/**
+ * Échappe les caractères de contrôle \n, \r, \t qui se trouvent À L'INTÉRIEUR des chaînes JSON. Hors chaîne,
+ * ils restent tels quels (blancs JSON valides). Un « \ » échappe le caractère suivant (\" ne ferme pas la chaîne).
+ */
+export function escapeRawControlsInStrings(text: string): ControlScan {
+  const out: string[] = [];
+  let inString = false;
+  let escaped = false;
+  let rawNewlines = 0;
+  let rawTabs = 0;
+  for (const ch of text) {
+    if (!inString) {
+      if (ch === '"') inString = true;
+      out.push(ch);
+    } else if (escaped) {
+      escaped = false;
+      out.push(ch);
+    } else if (ch === "\\") {
+      escaped = true;
+      out.push(ch);
+    } else if (ch === '"') {
+      inString = false;
+      out.push(ch);
+    } else if (ch === "\n" || ch === "\r") {
+      rawNewlines++;
+      out.push(ch === "\n" ? "\\n" : "\\r");
+    } else if (ch === "\t") {
+      rawTabs++;
+      out.push("\\t");
+    } else {
+      out.push(ch);
+    }
+  }
+  return { text: out.join(""), rawNewlines, rawTabs };
+}
+
+/** JSON.parse, puis, pour un texte commençant par « { », un second essai après échappement des contrôles bruts. */
+function parseJsonLoose(text: string): { ok: true; value: unknown; repaired: boolean } | { ok: false } {
+  const direct = tryParseJson(text);
+  if (direct.ok) return { ...direct, repaired: false };
+  if (!text.startsWith("{")) return { ok: false };
+  const scan = escapeRawControlsInStrings(text);
+  if (scan.rawNewlines + scan.rawTabs === 0) return { ok: false };
+  const again = tryParseJson(scan.text);
+  return again.ok ? { ...again, repaired: true } : { ok: false };
 }
 
 function tryParseYaml(text: string): unknown {
@@ -93,7 +177,9 @@ function simulatorText(text: string): string | null {
   return inner.trim() !== "" && isSimulatorObject(tryParseYaml(inner)) ? inner : null;
 }
 
-function fromJson(data: unknown): { yaml: string; form: ExtractionForm } | null {
+type Read = Pick<Found, "yaml" | "form">;
+
+function fromJson(data: unknown): Read | null {
   if (!isPlainObject(data)) return null;
   if ("yaml" in data) {
     const value = data.yaml;
@@ -114,19 +200,56 @@ function fromJson(data: unknown): { yaml: string; form: ExtractionForm } | null 
   return null;
 }
 
-function attempt(text: string, allowUnfence: boolean): { yaml: string; form: ExtractionForm } | null {
-  const json = tryParseJson(text);
-  if (json.ok) return fromJson(json.value);
+const NAME_LINE = /^name[ \t]*:/m;
+const TRAILING_FENCE = /\r?\n?[ \t]*```\s*$/;
+
+/**
+ * Texte qui suit une phrase d'introduction : à partir du premier « { » (jusqu'au dernier « } ») ou de la
+ * première ligne « name: », selon ce qui vient en premier. null s'il n'y a rien avant (ou rien à trouver).
+ */
+function afterPreamble(text: string): string | null {
+  const brace = text.indexOf("{");
+  const name = NAME_LINE.exec(text)?.index ?? -1;
+  const starts = [brace, name].filter((i) => i > 0);
+  if (starts.length === 0 || brace === 0 || name === 0) return null;
+  const start = Math.min(...starts);
+  if (start === brace) {
+    const end = text.lastIndexOf("}");
+    return text.slice(start, end > start ? end + 1 : undefined);
+  }
+  return text.slice(start).replace(TRAILING_FENCE, "");
+}
+
+function attempt(text: string, allowUnfence: boolean, allowPreamble: boolean): Found | null {
+  const json = parseJsonLoose(text);
+  if (json.ok) {
+    const read = fromJson(json.value);
+    return read ? { ...read, repaired: json.repaired, prefixSkipped: false } : null;
+  }
   if (allowUnfence) {
     const m = FENCE.exec(text);
-    if (m) return attempt(m[2].trim(), false);
+    if (m) return attempt(m[2].trim(), false, false);
   }
   const data = tryParseYaml(text);
-  return isSimulatorObject(data) ? { yaml: text, form: "yaml_text" } : null;
+  const asYaml: Found | null = isSimulatorObject(data) ? { yaml: text, form: "yaml_text", repaired: false, prefixSkipped: false } : null;
+  // « Voici le YAML :\nname: … » se lit aussi en YAML, avec la phrase comme clé en plus : on essaie alors sans
+  // la phrase. Un YAML dont toutes les clés sont dans le schéma est pris tel quel (rien n'est retiré).
+  if (asYaml && hasOnlySchemaKeys(data as Record<string, unknown>)) return asYaml;
+  if (allowPreamble) {
+    const rest = afterPreamble(text);
+    const found = rest === null ? null : attempt(rest.trim(), true, false);
+    if (found) return { ...found, prefixSkipped: true };
+  }
+  return asYaml;
+}
+
+function firstCharOf(trimmed: string): ResponseShape["firstChar"] {
+  const c = trimmed.charAt(0);
+  return c === "{" || c === "[" || c === "n" || c === "`" ? c : "autre";
 }
 
 /** Forme de la réponse : types et noms de clés seulement, jamais une valeur. */
-export function describeShape(text: string): ResponseShape {
+export function describeShape(text: string, options: { repaired?: boolean } = {}): ResponseShape {
   const trimmed = text.trim();
   const fence = FENCE.exec(trimmed);
   const lang = fence?.[1].toLowerCase();
@@ -134,8 +257,13 @@ export function describeShape(text: string): ResponseShape {
   const json = tryParseJson(inner);
   const value = json.ok ? json.value : tryParseYaml(inner);
   const structured = json.ok || isPlainObject(value) || Array.isArray(value);
+  const brace = inner.indexOf("{");
   const shape: ResponseShape = {
     length: text.length,
+    firstChar: firstCharOf(trimmed),
+    hasYamlKey: text.includes('"yaml"'),
+    hasRawNewlineInString: brace >= 0 && escapeRawControlsInStrings(inner.slice(brace)).rawNewlines > 0,
+    repaired: options.repaired ?? false,
     fenced: Boolean(fence),
     ...(fence ? { fenceLang: lang === "json" ? "json" : lang === "yaml" || lang === "yml" ? "yaml" : lang ? "other" : "none" } : {}),
     json: json.ok,
@@ -151,8 +279,12 @@ export function describeShape(text: string): ResponseShape {
 
 export function extractSimulatorYaml(text: string | undefined | null): Extraction {
   if (typeof text !== "string" || text.trim() === "") {
-    return { ok: false, shape: { length: typeof text === "string" ? text.length : 0, fenced: false, json: false, topType: "text" } };
+    const length = typeof text === "string" ? text.length : 0;
+    return {
+      ok: false,
+      shape: { length, firstChar: "autre", hasYamlKey: false, hasRawNewlineInString: false, repaired: false, fenced: false, json: false, topType: "text" },
+    };
   }
-  const found = attempt(text.trim(), true);
+  const found = attempt(text.trim(), true, true);
   return found ? { ok: true, ...found } : { ok: false, shape: describeShape(text) };
 }

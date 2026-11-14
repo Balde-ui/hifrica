@@ -42,6 +42,9 @@ export function buildSystemPrompt(exampleYaml?: string): string {
     "- Dans le corps d'un webhook, réutilise l'identifiant de la réponse avec {{response.id}} (ou {{response.<champ>}}), " +
       "jamais un nouveau {{uuid}}.",
     "- Pose sensitive: true sur toute étape USSD qui demande un PIN ou un code secret.",
+    // Liste alignée sur conditionHolds (apps/engine/src/simulators.ts) : opérateur suivi d'un espace, sinon valeur exacte.
+    "- Dans `match`, utilise uniquement une valeur exacte ou les opérateurs >, <, >=, <=, != et contains, suivis d'un espace " +
+      '(ex. "> 500000", "contains test"). Jamais d\'expression régulière : elle ne serait jamais reconnue.',
     "- Jamais de vraies URL, de vraies marques, de vrais noms, numéros, emails ou clés : uniquement des données fictives.",
     "- La description a été masquée : [EMAIL], [TEL], [CLE], [IBAN], [CARTE], [SECRET] remplacent des données réelles ; " +
       "ne les recopie pas, utilise des valeurs fictives.",
@@ -52,7 +55,8 @@ export function buildSystemPrompt(exampleYaml?: string): string {
     "",
     "## Format de sortie",
     'Réponds uniquement avec un objet json de la forme {"yaml": "<le YAML complet>"}, sans texte autour ni bloc de code. ' +
-      "Le YAML est une chaîne json (retours à la ligne échappés en \\n).",
+      'Le YAML est une chaîne json. Dans la valeur "yaml", échappe chaque retour à la ligne en \\n : ' +
+      "la réponse doit être un JSON valide sur une seule ligne logique.",
   );
   return parts.join("\n");
 }
