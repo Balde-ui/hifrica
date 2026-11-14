@@ -83,6 +83,31 @@ export async function assertProjectOwner(user: AuthenticatedUser, projectId: str
   return rows.length === 1;
 }
 
+/** Longueur maximale du nom affiché : la même que le formulaire d'inscription (maxLength 80). */
+export const NAME_MAX_LENGTH = 80;
+
+export type NameCheck = { ok: true } | { ok: false; code: "NAME_REQUIRED" | "NAME_TOO_LONG"; message: string };
+
+/**
+ * Nom affiché : chaîne de 1 à 80 caractères une fois les espaces de bord retirés. Compté en caractères
+ * Unicode, donc jamais plus strict que le maxLength du formulaire (qui compte des unités UTF-16).
+ */
+export function checkDisplayName(value: unknown): NameCheck {
+  if (typeof value !== "string" || value.trim().length === 0) {
+    return { ok: false, code: "NAME_REQUIRED", message: "Nom requis." };
+  }
+  if ([...value.trim()].length > NAME_MAX_LENGTH) {
+    return { ok: false, code: "NAME_TOO_LONG", message: `Nom trop long (${NAME_MAX_LENGTH} caractères au plus).` };
+  }
+  return { ok: true };
+}
+
+/** Routes de Better Auth qui reçoivent un nom saisi par l'utilisateur (obligatoire à l'inscription). */
+const NAME_ROUTES: Record<string, "required" | "optional"> = {
+  "/api/auth/sign-up/email": "required",
+  "/api/auth/update-user": "optional",
+};
+
 /** Monte le gestionnaire Better Auth sur /api/auth/* (Fastify a déjà lu et analysé le corps). */
 export function registerAuthRoutes(app: FastifyInstance, auth: Auth, baseURL: string): void {
   app.route({
@@ -90,6 +115,16 @@ export function registerAuthRoutes(app: FastifyInstance, auth: Auth, baseURL: st
     url: "/api/auth/*",
     async handler(req, reply) {
       const url = new URL(req.url, baseURL);
+      // Limite du nom appliquée côté serveur, avant Better Auth (dont la configuration reste inchangée).
+      // Réponse au même format que ses erreurs : { code, message }.
+      const nameRule = req.method === "POST" ? NAME_ROUTES[url.pathname] : undefined;
+      if (nameRule) {
+        const body = typeof req.body === "object" && req.body !== null ? (req.body as Record<string, unknown>) : undefined;
+        if (nameRule === "required" || (body !== undefined && "name" in body)) {
+          const check = checkDisplayName(body?.name);
+          if (!check.ok) return reply.code(400).send({ code: check.code, message: check.message });
+        }
+      }
       const hasBody = req.method !== "GET" && req.body !== undefined && req.body !== null;
       const response = await auth.handler(
         new Request(url, {

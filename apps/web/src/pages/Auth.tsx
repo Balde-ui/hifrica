@@ -13,6 +13,8 @@ const AUTH_ERRORS: Record<string, string> = {
   PASSWORD_TOO_SHORT: "Mot de passe trop court (8 caractères au moins).",
   PASSWORD_TOO_LONG: "Mot de passe trop long (128 caractères au plus).",
   INVALID_EMAIL: "Adresse email invalide.",
+  NAME_REQUIRED: "Nom requis.",
+  NAME_TOO_LONG: "Nom trop long (80 caractères au plus).",
 };
 
 function authError(err: unknown): string {

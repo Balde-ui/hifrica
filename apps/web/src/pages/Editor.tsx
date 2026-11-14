@@ -96,7 +96,7 @@ export function EditorPage() {
     try {
       const r = await api<{ slug: string; version: string }>("/api/simulators", { body: { yaml, origin, ...(forkOf ? { forkOf } : {}) } });
       setPublished(r);
-      toast("Simulateur publié dans le catalogue");
+      toast("Simulateur publié dans le catalogue sous licence CC BY 4.0");
     } catch (err) {
       if (err instanceof ApiError && err.status === 422) setError("Le serveur a refusé le YAML : corrigez les erreurs signalées.");
       else setError(errorMessage(err));
@@ -134,7 +134,7 @@ export function EditorPage() {
                 <Icon name="refresh" /> <span className="hide-xs">Modèle</span>
               </button>
               {user ? (
-                <button className="btn btn-primary btn-sm" disabled={!check.valid || publishing} onClick={publish} title={check.valid ? "Publier dans le catalogue" : "Corrigez les erreurs avant de publier"}>
+                <button className="btn btn-primary btn-sm" disabled={!check.valid || publishing} onClick={publish} title={check.valid ? "Publier dans le catalogue sous licence CC BY 4.0" : "Corrigez les erreurs avant de publier"}>
                   {publishing ? <Spinner /> : <><Icon name="upload" /> Publier</>}
                 </button>
               ) : (
@@ -199,6 +199,17 @@ export function EditorPage() {
               </dl>
             </div>
           )}
+          <div className="ide-section">
+            <span className="section-title">Licence de publication</span>
+            <p className="small muted" style={{ marginTop: "0.6rem" }}>
+              <span className="badge badge-info" style={{ marginRight: "0.4rem" }}>CC BY 4.0</span>
+              En publiant, vous placez ce simulateur sous licence{" "}
+              <a href="https://creativecommons.org/licenses/by/4.0/deed.fr" target="_blank" rel="noreferrer">
+                Creative Commons Attribution 4.0
+              </a>{" "}
+              : chacun peut le réutiliser et l'adapter, à condition de vous citer.
+            </p>
+          </div>
           {(error || published) && (
             <div className="ide-section stack-sm">
               {error && <Alert>{error}</Alert>}
@@ -207,7 +218,7 @@ export function EditorPage() {
                   <strong>
                     {published.slug} {published.version}
                   </strong>{" "}
-                  est publié dans le catalogue. <Link to={`/catalogue/${published.slug}`}>Voir sa documentation</Link>. Son exécution par le moteur arrive avec le chargement des simulateurs publiés.
+                  est publié dans le catalogue sous licence CC BY 4.0 : réutilisable et adaptable par tous, avec attribution. <Link to={`/catalogue/${published.slug}`}>Voir sa documentation</Link>. Son exécution par le moteur arrive avec le chargement des simulateurs publiés.
                 </Alert>
               )}
             </div>
@@ -244,6 +255,9 @@ const AI_ERRORS: Record<string, string> = {
   ai_timeout: "La génération a pris trop de temps : réessayez avec une description plus courte.",
   quota_exceeded: "Quota de générations atteint pour l'heure : réessayez plus tard.",
   daily_limit_reached: "Le plafond quotidien de générations est atteint : réessayez demain.",
+  // Erreurs de l'assistant réservé aux comptes connectés (PR #23) : 401 sans session, 429 quota du compte.
+  auth_required: "Connectez-vous pour utiliser l'assistant.",
+  user_quota_exceeded: "Quota du jour atteint. Réessayez demain.",
 };
 
 function AiPanel({ onClose, onGenerated }: { onClose: () => void; onGenerated: (yaml: string) => void }) {

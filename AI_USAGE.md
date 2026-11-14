@@ -17,6 +17,10 @@ Déclaration exigée par l'article 6 du règlement CADEV 2026 : outils utilisés
 | Claude Code | Iza | B2 : écran du téléphone simulé (interface) | Iza, relu en PR par A |
 | Claude Code | Iza | B3 : moteur USSD (menus, sessions Valkey, saisies sensibles) | Iza, relu en PR par A et C |
 | Claude Code | Iza | B4 : notification SMS depuis un simulateur HTTP (`screen: sms`) | Iza, relu en PR par A |
+| Claude Code | Mamadou | C0 + C1 : conception des tables (comptes, projets, clés, simulateurs, scénarios actifs, journal des requêtes), schéma Drizzle, migrations au démarrage, chiffrement des secrets de webhook (`packages/db`) | Mamadou, relu en PR par A et B (#2) |
+| Claude Code | Mamadou | C4 (couche de données) : erreurs sûres et validation des données (E1) | Mamadou, relu en PR par A et B (#8) |
+| Claude Code | Mamadou | C2 à C5 : comptes Better Auth, projets, clés de test hachées et affichées une seule fois, vraie clé et scénario actif dans le moteur, journal des requêtes et console, catalogue, éditeur YAML et fork, boutique de démonstration | Mamadou, relu en PR par A et B (#12) |
+| Claude Code | Mamadou | Refonte de l'interface (`apps/web`) : design system, pages, responsive, accessibilité, inspection visuelle automatisée (Playwright) | Mamadou, fusionnée par A (#12) |
 | _à compléter_ | | | |
 
 Chaque contribution produite avec une IA est relue en pull request par un autre membre avant fusion, et les trois membres savent l'expliquer.

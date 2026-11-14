@@ -149,15 +149,17 @@ export function ConsolePage() {
           </Empty>
         ) : (
           <div className="table-wrap">
-            <table className="table">
+            {/* Colonnes secondaires (méthode, scénario) masquées sur écrans intermédiaires : elles restent
+                lisibles dans le panneau de détail de chaque requête. Date et durée ne passent jamais à la ligne. */}
+            <table className="table console-table">
               <thead>
                 <tr>
                   <th>Statut</th>
-                  <th className="hide-sm">Méthode</th>
+                  <th className="hide-sm col-secondary">Méthode</th>
                   <th>Endpoint</th>
-                  <th className="hide-sm">Scénario</th>
-                  <th className="num">Durée</th>
-                  <th className="num hide-sm">Date</th>
+                  <th className="hide-sm col-secondary">Scénario</th>
+                  <th className="num nowrap col-duration">Durée</th>
+                  <th className="num hide-sm nowrap col-date">Date</th>
                 </tr>
               </thead>
               <tbody>
@@ -173,13 +175,21 @@ export function ConsolePage() {
                       <StatusCode status={l.status} />
                       {l.outcome !== "responded" && <span className="badge badge-warn" style={{ marginLeft: 6 }}>interrompue</span>}
                     </td>
-                    <td className="hide-sm"><Method method={l.method} /></td>
-                    <td className="mono small" style={{ maxWidth: 0, width: "100%" }}>
+                    <td className="hide-sm col-secondary"><Method method={l.method} /></td>
+                    <td className="mono small col-path" title={l.path}>
                       <div className="truncate">{l.path}</div>
                     </td>
-                    <td className="hide-sm">{l.scenarioKey ? <span className="badge badge-warn">{l.scenarioKey}</span> : <span className="xs muted">nominal</span>}</td>
-                    <td className="num small">{l.durationMs} ms</td>
-                    <td className="num small muted hide-sm" title={formatDate(l.createdAt)}>{timeAgo(l.createdAt)}</td>
+                    <td className="hide-sm col-secondary">
+                      {l.scenarioKey ? (
+                        <span className="badge badge-warn badge-trunc" title={l.scenarioKey}>
+                          <span className="truncate">{l.scenarioKey}</span>
+                        </span>
+                      ) : (
+                        <span className="xs muted">nominal</span>
+                      )}
+                    </td>
+                    <td className="num small nowrap">{l.durationMs} ms</td>
+                    <td className="num small muted hide-sm nowrap" title={formatDate(l.createdAt)}>{timeAgo(l.createdAt)}</td>
                   </tr>
                 ))}
               </tbody>
