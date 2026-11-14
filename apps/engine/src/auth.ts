@@ -7,7 +7,7 @@ import { getDb } from "./db.js";
 
 export type AuthResult = { ok: true; projectId: string; apiKeyId?: string } | { ok: false };
 
-const KEY_HEADER = /^Bearer (sk_test_[0-9A-Za-z]{43})$/;
+export const KEY_HEADER = /^Bearer (sk_test_[0-9A-Za-z]{43})$/;
 /** last_used_at n'est mis à jour qu'une fois par minute et par clé (écriture rare, horloge de la base). */
 const TOUCH_INTERVAL_SECONDS = 60;
 

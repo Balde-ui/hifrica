@@ -68,6 +68,8 @@ La page **Démo boutique** montre le même parcours dans une petite boutique en 
 
 Un simulateur est un fichier YAML validé par un JSON Schema commun ([`packages/shared/src/schema.ts`](packages/shared/src/schema.ts)) : le même contrôle est fait dans l'éditeur, par l'API, par le moteur et sur la sortie de l'assistant IA. Taille maximale : 64 Ko.
 
+**Publié, il répond tout de suite.** Un simulateur publié depuis l'éditeur est appelable sur `https://sim.hifrica.site/<slug>/…` (le `slug` est son `name`), avec une clé de test, comme ceux livrés avec la plateforme. C'est vrai aussi pour ceux marqués **« Généré par IA, à vérifier »** : relisez-les avant de vous y fier. Une nouvelle version est prise en compte au plus 30 secondes après sa publication, et un simulateur retiré du catalogue cesse de répondre dans le même délai. Si un simulateur livré avec la plateforme (dossier `simulators/`) porte le même nom, c'est lui qui répond. Un appel sans clé de test bien formée (`Bearer sk_test_` suivi de 43 caractères) reçoit `401 {"error":"invalid_test_key"}` avant toute recherche du simulateur ; ouverte dans un navigateur, l'adresse renvoie à la fiche du catalogue. Si la base ne répond pas, le moteur renvoie `503 {"error":"engine_unavailable"}` plutôt que de déclarer le simulateur inconnu.
+
 ### Simulateur HTTP
 
 ```yaml
@@ -355,6 +357,7 @@ Le moteur seul, sans base, utilise deux bouchons à la place de l'URL et du secr
 - **Clés de test** : 256 bits aléatoires. Seule leur empreinte SHA-256 est stockée ; la clé est affichée une seule fois et peut être révoquée (refus immédiat en `401`).
 - **Secrets de webhook** : un par projet, chiffré en AES-256-GCM. Les clés de chiffrement restent hors de la base (`WEBHOOK_SECRET_KEYS`).
 - **Protection SSRF des webhooks** : `http` et `https` seulement. Les adresses privées ou réservées (IPv4 et IPv6) sont refusées au moment de la connexion, ce qui protège aussi d'un changement d'adresse DNS. Aucune redirection n'est suivie, et chaque tentative dure 5 s au plus.
+- **Simulateurs publiés** : aucune lecture en base sans clé de test bien formée ; un simulateur jamais publié, retiré du catalogue ou dont le YAML ne passe plus le schéma n'est jamais exécuté.
 - **Journal des requêtes** : métadonnées seulement. Ni corps, ni en-tête `Authorization`, ni query ne sont enregistrés.
 - **Assistant IA** : réservé aux comptes connectés, désactivé par défaut (`AI_GENERATION_ENABLED`). Limité à 20 générations par jour et par compte (`AI_USER_DAILY_LIMIT`), 10 par heure et par client (adresse IPv4, ou bloc /64 en IPv6), avec un plafond global par jour (`AI_DAILY_LIMIT`, 100 par défaut). Les emails, numéros, clés, IBAN, numéros de carte et codes sont masqués avant l'envoi au fournisseur. Ce masquage est partiel : ses limites sont listées dans [`AI_USAGE.md`](AI_USAGE.md).
 

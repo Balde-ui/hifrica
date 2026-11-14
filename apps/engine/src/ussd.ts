@@ -14,6 +14,7 @@ import type { FastifyInstance } from "fastify";
 import { authenticate } from "./auth.js";
 import type { HifricaRequestContext } from "./context.js";
 import { publishEvent } from "./events.js";
+import { isEngineUnavailable, isInvalidTestKey, toResolver, type SimulatorSource } from "./catalog.js";
 import type { Simulator, UssdMenu } from "./simulators.js";
 import { runCommand } from "./valkey.js";
 
@@ -48,11 +49,20 @@ function resolveNextMenuKey(current: UssdMenu, currentKey: string, input: string
   return currentKey;
 }
 
-export function registerUssd(app: FastifyInstance, simulators: Map<string, Simulator>): void {
+/** `simulators` : fichiers de simulators/ (Map) ou résolveur du catalogue (fichiers puis simulateurs publiés, A). */
+export function registerUssd(app: FastifyInstance, simulators: SimulatorSource): void {
+  const resolveSimulator = toResolver(simulators);
   app.post<{ Params: { simulator: string }; Body: { sessionId?: string; text?: string } }>(
     "/:simulator/ussd",
     async (req, reply) => {
-      const sim = simulators.get(req.params.simulator);
+      let sim: Simulator | null;
+      try {
+        sim = await resolveSimulator(req.params.simulator, req);
+      } catch (err) {
+        if (isInvalidTestKey(err)) return reply.code(401).send({ error: "invalid_test_key" });
+        if (!isEngineUnavailable(err)) throw err;
+        return reply.code(503).send({ error: "engine_unavailable" });
+      }
       if (!sim || sim.kind !== "ussd" || !sim.menus?.start) {
         return reply.code(404).send({ error: "simulator_not_found" });
       }

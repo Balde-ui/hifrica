@@ -75,13 +75,16 @@ describe("sim.<domaine> : navigateurs redirigés vers le catalogue, programmes i
     assert.equal(ussd.res.headers.location, `${APP}/catalogue/mobile-money-ussd`);
   });
 
-  it("navigateur sur un simulateur inconnu → 302 vers le catalogue", async () => {
+  it("navigateur sur un slug absent des fichiers → 302 vers /catalogue/<slug> (la fiche dit s'il est publié)", async () => {
     for (const url of ["/inconnu/v1/x", "/inconnu"]) {
       const { res, hifrica } = await call({ method: "GET", url, headers: BROWSER });
       assert.equal(res.statusCode, 302, url);
-      assert.equal(res.headers.location, `${APP}/catalogue`, url);
+      assert.equal(res.headers.location, `${APP}/catalogue/inconnu`, url);
       assert.equal(hifrica, null);
     }
+    // Slug invalide (hors motif) : le catalogue général.
+    const invalid = await call({ method: "GET", url: "/Pas_Un_Slug/x", headers: BROWSER });
+    assert.equal(invalid.res.headers.location, `${APP}/catalogue`);
   });
 
   it("navigateur avec Authorization sur un simulateur → comportement normal (clé valide 200, invalide 401)", async () => {

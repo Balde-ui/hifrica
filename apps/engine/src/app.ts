@@ -1,8 +1,10 @@
 // Construction du moteur de simulation (routes et crochets), sans écoute réseau : voir index.ts.
 import { randomUUID } from "node:crypto";
-import Fastify, { type FastifyInstance, type FastifyServerOptions } from "fastify";
+import { isSlug } from "@hifrica/db";
+import Fastify, { type FastifyInstance, type FastifyReply, type FastifyRequest, type FastifyServerOptions } from "fastify";
 import { authenticate, resolveScenario } from "./auth.js";
 import { appPublicUrl, catalogueUrl, homeDocument, isBrowserRequest, redirectBrowser } from "./browser.js";
+import { createCatalog, isEngineUnavailable, isInvalidTestKey, type CatalogOptions } from "./catalog.js";
 import type { HifricaRequestContext } from "./context.js";
 import { registerConfirmations } from "./confirmations.js";
 import { publishEvent } from "./events.js";
@@ -23,10 +25,12 @@ export interface BuildAppOptions {
   /** Variables d'environnement (par défaut process.env) ; injectables pour les tests. */
   env?: Env;
   logger?: FastifyServerOptions["logger"];
+  /** Accès aux simulateurs publiés (base, horloge du cache) ; remplaçable dans les tests. */
+  catalog?: Pick<CatalogOptions, "getDb" | "fetchPublished" | "now">;
 }
 
 /** Construit le moteur sans l'écouter : utilisé par index.ts et par les tests. */
-export function buildApp({ simulators: given, env = process.env, logger = true }: BuildAppOptions = {}): FastifyInstance {
+export function buildApp({ simulators: given, env = process.env, logger = true, catalog: catalogOptions }: BuildAppOptions = {}): FastifyInstance {
   const app = Fastify({ logger, bodyLimit: 64 * 1024, genReqId: () => randomUUID() });
   const appUrl = appPublicUrl(env);
 
@@ -43,8 +47,32 @@ export function buildApp({ simulators: given, env = process.env, logger = true }
   registerWebhooks(app, env);
 
   const simulators = given ?? loadSimulators(env.SIMULATORS_DIR ?? "/simulators", (m) => app.log.info(m));
+  // Fichiers de simulators/ d'abord, puis simulateurs publiés depuis l'éditeur (catalog.ts, avec cache).
+  const catalog = createCatalog({ files: simulators, log: app.log.child({ component: "catalog" }), ...catalogOptions });
+  /**
+   * Simulateur du slug pour la requête d'un client : null s'il n'existe pas, "unavailable" si la base ne
+   * répond pas, "invalid_key" si le slug n'est pas un fichier et que la clé est absente ou mal formée
+   * (aucune lecture en base dans ce cas). Les fichiers de simulators/ ne passent pas par ce contrôle.
+   */
+  const resolveForRequest = async (req: FastifyRequest, slug: string): Promise<Simulator | null | "unavailable" | "invalid_key"> => {
+    try {
+      return await catalog.resolve(slug, req);
+    } catch (err) {
+      if (isEngineUnavailable(err)) return "unavailable";
+      if (isInvalidTestKey(err)) return "invalid_key";
+      throw err;
+    }
+  };
+  /**
+   * Navigateur, sans aucune lecture en base : un fichier de simulators/ → sa fiche ; tout autre slug valide
+   * → /catalogue/<slug> (la fiche dit elle-même s'il est publié) ; sinon le catalogue.
+   */
+  const redirectToCatalogue = (reply: FastifyReply, slug: string) => {
+    const file = simulators.get(slug);
+    return redirectBrowser(reply, catalogueUrl(appUrl, file ? file.name : isSlug(slug) ? slug : undefined));
+  };
   // A4 : abonnement aux phone.confirm / phone.reject, qui déclenchent les webhooks « on: ».
-  registerConfirmations(app, simulators);
+  registerConfirmations(app, catalog.resolve);
 
   app.get("/health", async () => ({ status: "ok", service: "engine", simulators: [...simulators.keys()] }));
 
@@ -57,15 +85,18 @@ export function buildApp({ simulators: given, env = process.env, logger = true }
   // /<simulateur> sans chemin : navigateur → fiche du simulateur ; sinon le 404 habituel de Fastify.
   app.get<{ Params: { simulator: string } }>("/:simulator", async (req, reply) => {
     if (!isBrowserRequest(req)) return reply.callNotFound();
-    const sim = simulators.get(req.params.simulator);
-    return redirectBrowser(reply, catalogueUrl(appUrl, sim?.name));
+    return redirectToCatalogue(reply, req.params.simulator);
   });
 
   // Point d'entrée de tous les simulateurs : https://sim.<domaine>/<simulateur>/<chemin déclaré dans le YAML>
   app.all<{ Params: { simulator: string; "*": string } }>("/:simulator/*", async (req, reply) => {
-    const sim = simulators.get(req.params.simulator);
     // Navigateur (GET, Accept text/html, sans Authorization) : fiche du simulateur, avant toute authentification.
-    if (isBrowserRequest(req)) return redirectBrowser(reply, catalogueUrl(appUrl, sim?.name));
+    if (isBrowserRequest(req)) return redirectToCatalogue(reply, req.params.simulator);
+    const sim = await resolveForRequest(req, req.params.simulator);
+    // Slug absent des fichiers et clé absente ou mal formée : 401 sans lecture en base.
+    if (sim === "invalid_key") return reply.code(401).send({ error: "invalid_test_key" });
+    // Base injoignable : le simulateur existe peut-être, on ne répond pas « inconnu ».
+    if (sim === "unavailable") return reply.code(503).send({ error: "engine_unavailable" });
     if (!sim || sim.kind !== "http") return reply.code(404).send({ error: "simulator_not_found" });
     const hifrica: HifricaRequestContext = { simulator: sim.name, channel: "http" };
     req.hifrica = hifrica;
@@ -136,7 +167,7 @@ export function buildApp({ simulators: given, env = process.env, logger = true }
     return reply.code(response.status).headers(response.headers).send(response.body);
   });
 
-  registerUssd(app, simulators);
+  registerUssd(app, catalog.resolve);
 
   return app;
 }
