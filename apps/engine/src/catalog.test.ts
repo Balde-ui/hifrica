@@ -4,7 +4,7 @@ import { readFileSync } from "node:fs";
 import { describe, it } from "node:test";
 import { DbOperationError, type Database, type ExecutableSimulator } from "@hifrica/db";
 import { projectChannel, validateSimulatorYaml, type PhoneSession } from "@hifrica/shared";
-import { createCatalog, EngineUnavailableError, FOUND_TTL_MS, MAX_CACHE_ENTRIES, MISSING_TTL_MS, toResolver } from "./catalog.js";
+import { createCatalog, DB_TIMEOUT_MS, EngineUnavailableError, FOUND_TTL_MS, MAX_CACHE_ENTRIES, MISSING_TTL_MS, toResolver } from "./catalog.js";
 import { handleConfirmationMessage } from "./confirmations.js";
 import type { SessionStore } from "./phone-session.js";
 import type { Simulator } from "./simulators.js";
@@ -104,6 +104,23 @@ describe("catalogue des simulateurs (fichiers puis publiés)", () => {
       await assert.rejects(c.resolve("en-panne"), (err) => err instanceof EngineUnavailableError && err.reason === "connection");
     }
     assert.equal(reads.length, 2, "une erreur n'est pas gardée en cache");
+  });
+
+  it("base muette (requête sans réponse) → EngineUnavailableError timeout, non mise en cache", async () => {
+    const l = logger();
+    let reads = 0;
+    const c = createCatalog({
+      files: new Map(),
+      log: l.log,
+      getDb: () => FAKE_DB,
+      fetchPublished: () => (reads++, new Promise<never>(() => undefined)),
+      dbTimeoutMs: 20,
+    });
+    await assert.rejects(c.resolve("base-figee"), (err) => err instanceof EngineUnavailableError && err.reason === "timeout");
+    await assert.rejects(c.resolve("base-figee"));
+    assert.equal(reads, 2);
+    assert.equal(l.errors[0].obj.reason, "timeout");
+    assert.equal(DB_TIMEOUT_MS, 3000);
   });
 
   it("sans base (développement local) : les fichiers seulement", async () => {
