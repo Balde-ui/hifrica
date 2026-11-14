@@ -7,7 +7,7 @@ Un assistant IA écrit un premier simulateur à partir d'une simple description 
 Projet présenté au concours CADEV 2026.
 
 - **Application** : https://app.hifrica.site
-- **Simulateurs** : https://sim.hifrica.site
+- **Simulateurs** : https://sim.hifrica.site (pour les programmes ; ouvert dans un navigateur, renvoie au catalogue)
 
 > **État du projet.** Fonctionnent : le moteur HTTP, les scénarios d'échec, les comptes, les projets, les clés, la console, le catalogue, l'éditeur, l'assistant IA, les webhooks signés (URL et secret par projet, historique des tentatives), le flux temps réel (SSE) des événements d'un projet et la route de confirmation d'un paiement (`POST /api/phone/{session}/action`). Sont **en cours** : l'écran du téléphone simulé dans l'interface et l'exécution des simulateurs USSD et SMS.
 
@@ -332,7 +332,7 @@ curl -i -X POST localhost:4000/paiement-mobile-generique/v1/checkout \
    | Service | Variables |
    | --- | --- |
    | API | `DATABASE_URL`, `VALKEY_URL`, `BETTER_AUTH_SECRET`, `BETTER_AUTH_URL` (adresse de l'interface, `http://localhost:5173`), `WEBHOOK_SECRET_KEYS` (création de projets), `ENGINE_INTERNAL_URL=http://localhost:4000` (envoi de requêtes depuis la console) |
-   | Moteur | `DATABASE_URL`, `VALKEY_URL`, `SIMULATORS_DIR`, `WEBHOOK_SECRET_KEYS` (la même que l'API : déchiffre le secret de chaque projet) |
+   | Moteur | `DATABASE_URL`, `VALKEY_URL`, `SIMULATORS_DIR`, `WEBHOOK_SECRET_KEYS` (la même que l'API : déchiffre le secret de chaque projet) ; `APP_PUBLIC_URL` facultative (redirection des navigateurs, défaut `http://localhost:5173` sans `APP_DOMAIN`) |
    | Assistant IA (facultatif) | `AI_GENERATION_ENABLED=true` et `DEEPSEEK_API_KEY` ou `GEMINI_API_KEY` ; `AI_USER_DAILY_LIMIT` (20 par compte et par jour) et `AI_DAILY_LIMIT` (100 par jour) |
    | Webhooks vers `localhost` (facultatif) | `WEBHOOK_ALLOW_PRIVATE=true` et `NODE_ENV=development` sur le moteur ; l'URL se règle dans l'onglet **Paramètres** du projet |
 
