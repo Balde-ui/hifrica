@@ -598,6 +598,18 @@ kbd { background: var(--surface-3); border: 1px solid var(--border-strong); bord
 .pay-btn > * { white-space: nowrap; }
 .pay-btn:hover { background: #2c3239; }
 .pay-btn:disabled { opacity: 0.45; cursor: not-allowed; }
+/* Champ + bouton SMS (B5) : la carte .checkout est claire, les classes .input/.btn de l'appli (pensées
+   pour le fond sombre) y seraient quasi invisibles — thème propre, assorti à .qty et .pay-btn. */
+.otp-row { display: flex; gap: 0.4rem; }
+.otp-input { flex: 1; min-width: 0; height: 32px; padding: 0 0.6rem; border: 1px solid #e0dcd3; border-radius: 7px; background: #fff; color: #1b1f24; font-size: 0.84rem; }
+.otp-input:focus { outline: 2px solid #c9c4b8; outline-offset: 1px; }
+.otp-btn { flex: none; height: 32px; padding: 0 0.7rem; border: 1px solid #1b1f24; border-radius: 7px; background: #fff; color: #1b1f24; font-size: 0.8rem; font-weight: 600; cursor: pointer; }
+.otp-btn:hover { background: #f3f1ec; }
+.otp-btn:disabled { opacity: 0.45; cursor: not-allowed; }
+/* .label/.muted sont pensés pour le fond sombre de l'appli (gris clair) : repris en gris foncé ici. */
+.otp-field .label { color: #5b616a; }
+.otp-hint { font-size: 0.72rem; color: #5b616a; margin-top: 0.3rem; }
+.otp-error { font-size: 0.72rem; color: #8f1d17; margin-top: 0.3rem; }
 .pay-result { margin-top: 0.9rem; border-radius: 8px; padding: 0.75rem 0.85rem; font-size: 0.84rem; border: 1px solid; }
 .pay-ok { background: #ecf8f1; border-color: #b7e2c8; color: #155c35; }
 .pay-ko { background: #fdf2e6; border-color: #f2cfa3; color: #8a4b0b; }

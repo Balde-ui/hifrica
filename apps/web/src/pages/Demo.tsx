@@ -15,6 +15,8 @@ const USSD_SIMULATOR = "mobile-money-ussd";
 const USSD_CODE = "*123#";
 const OTP_SIMULATOR = "otp-sms";
 const DEFAULT_PHONE = "+221770000000";
+// Format international simplifié : indicatif optionnel (+), chiffres uniquement, 8 à 15 chiffres (E.164).
+const PHONE_PATTERN = /^\+?[0-9]{8,15}$/;
 
 const PRODUCTS = [
   { id: "pagne", name: "Pagne wax 6 yards", price: 15000, emoji: "🧵", bg: "#f6efe4" },
@@ -81,7 +83,7 @@ export function DemoShop() {
   }
 
   async function sendOtp() {
-    if (!active || !phone.trim()) return;
+    if (!active || !PHONE_PATTERN.test(phone.trim())) return;
     setSendingOtp(true);
     setOtpError(null);
     setOtpSent(false);
@@ -126,6 +128,7 @@ export function DemoShop() {
 
   const outcome = result ? interpret(result) : null;
   const qty = (id: string, delta: number) => setCart((c) => ({ ...c, [id]: Math.max(0, Math.min(9, (c[id] ?? 0) + delta)) }));
+  const phoneValid = PHONE_PATTERN.test(phone.trim());
 
   return (
     <>
@@ -213,24 +216,27 @@ export function DemoShop() {
               </div>
               <div className="checkout">
                 <h3>Récapitulatif</h3>
-                <div className="field" style={{ marginTop: "0.4rem" }}>
+                <div className="field otp-field" style={{ marginTop: "0.4rem" }}>
                   <label className="label" htmlFor="dphone">Vérifier le numéro du client (SMS)</label>
-                  <div className="row" style={{ gap: "0.4rem" }}>
+                  <div className="otp-row">
                     <input
                       id="dphone"
-                      className="input mono"
+                      type="tel"
+                      className="otp-input mono"
                       value={phone}
                       onChange={(e) => setPhone(e.target.value)}
                       placeholder="+221770000000"
                       autoComplete="off"
-                      style={{ flex: 1 }}
                     />
-                    <button className="btn btn-sm" disabled={sendingOtp || !phone.trim() || !key.trim() || !active} onClick={() => void sendOtp()}>
+                    <button className="otp-btn" disabled={sendingOtp || !phoneValid || !key.trim() || !active} onClick={() => void sendOtp()}>
                       {sendingOtp ? <Spinner /> : "Recevoir un code"}
                     </button>
                   </div>
-                  {otpSent && <p className="muted" style={{ fontSize: "0.72rem", marginTop: "0.3rem" }}>Code envoyé : consultez le SMS reçu sur le téléphone simulé.</p>}
-                  {otpError && <p style={{ fontSize: "0.72rem", marginTop: "0.3rem", color: "#c0392b" }}>{otpError}</p>}
+                  {phone.trim() !== "" && !phoneValid && (
+                    <p className="otp-error">Numéro invalide : chiffres uniquement, avec un + optionnel (8 à 15 chiffres).</p>
+                  )}
+                  {otpSent && <p className="otp-hint">Code envoyé : consultez le SMS reçu sur le téléphone simulé.</p>}
+                  {otpError && <p className="otp-error">{otpError}</p>}
                 </div>
                 <div style={{ marginTop: "0.6rem" }}>
                   {items.length === 0 ? (
