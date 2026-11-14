@@ -5,6 +5,7 @@
 // Jamais de crash si Valkey tombe : ioredis se reconnecte et se réabonne seul.
 import { isHifricaEvent, isPhoneSession, projectChannel, type HifricaEvent } from "@hifrica/shared";
 import type { FastifyBaseLogger, FastifyInstance } from "fastify";
+import { isEngineUnavailable, toResolver, type SimulatorSource } from "./catalog.js";
 import { valkeySessionStore, type SessionStore } from "./phone-session.js";
 import type { Simulator } from "./simulators.js";
 import { parseDelay, render } from "./template.js";
@@ -26,11 +27,13 @@ export type ConfirmationOutcome =
   | "project_mismatch"
   | "status_mismatch"
   | "duplicate"
+  | "engine_unavailable" // simulateur publié illisible (base injoignable) : session non marquée
   | "endpoint_missing"
   | "no_webhook";
 
 export interface ConfirmationDeps {
-  simulators: Map<string, Simulator>;
+  /** Fichiers de simulators/ (Map) ou résolveur du catalogue (fichiers puis simulateurs publiés). */
+  simulators: SimulatorSource;
   store?: SessionStore;
   schedule?: (opts: ScheduleWebhookOptions, log: ConfirmationLogger) => Promise<void>;
   log: ConfirmationLogger;
@@ -90,6 +93,18 @@ export async function handleConfirmationMessage(channel: string, message: string
     return "status_mismatch";
   }
 
+  // Simulateur résolu AVANT le dédoublonnage : si la base est injoignable, la session n'est pas marquée
+  // et une nouvelle publication de l'événement pourra encore déclencher le webhook. La session garde le
+  // slug ; si la version publiée a changé entre-temps, c'est la version courante qui est utilisée.
+  let sim: Simulator | null;
+  try {
+    sim = await toResolver(simulators)(session.simulator);
+  } catch (err) {
+    const reason = isEngineUnavailable(err) ? err.reason : "error";
+    log.warn({ ...base, simulator: session.simulator, reason }, "confirmation : simulateur indisponible (base injoignable), ignorée");
+    return "engine_unavailable";
+  }
+
   // Dédoublonnage : une session ne déclenche qu'un webhook, même si l'événement est republié.
   let first: boolean;
   try {
@@ -103,7 +118,7 @@ export async function handleConfirmationMessage(channel: string, message: string
     return "duplicate";
   }
 
-  const endpoint = simulators.get(session.simulator)?.endpoints?.find((e) => e.id === session.endpointId);
+  const endpoint = sim?.endpoints?.find((e) => e.id === session.endpointId);
   if (!endpoint) {
     log.warn({ ...base, simulator: session.simulator, endpointId: session.endpointId }, "confirmation : endpoint introuvable");
     return "endpoint_missing";
@@ -131,7 +146,7 @@ export async function handleConfirmationMessage(channel: string, message: string
 /** Abonnement PSUBSCRIBE au démarrage (client dédié), fermé à l'arrêt de Fastify. */
 export function registerConfirmations(
   app: FastifyInstance,
-  simulators: Map<string, Simulator>,
+  simulators: SimulatorSource,
   overrides: Pick<ConfirmationDeps, "store" | "schedule"> = {},
 ): void {
   const subscriber = dedicatedValkey("confirmations");

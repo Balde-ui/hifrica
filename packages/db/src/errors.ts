@@ -86,6 +86,8 @@ export const DB_OPERATIONS = [
   "list_simulators",
   "get_simulator",
   "publish_simulator",
+  // Moteur : simulateur publié depuis l'éditeur (version courante), exécuté s'il n'est pas un fichier.
+  "get_executable_simulator",
 ] as const;
 export type DbOperation = (typeof DB_OPERATIONS)[number];
 /** Libellé utilisé quand l'opération fournie n'est pas dans la liste. */

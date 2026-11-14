@@ -12,6 +12,7 @@ Déclaration exigée par l'article 6 du règlement CADEV 2026 : outils utilisés
 | Claude Code | Alhassane | A2 : webhooks signés (file BullMQ, HMAC, relances, protection SSRF) | Alhassane, relu en PR par B ou C |
 | Claude Code | Alhassane | A3 + A4 : session de paiement et webhook sur confirmation | Alhassane, relu en PR par B et C |
 | Claude Code | Alhassane | A5 : webhooks par projet et historique des envois | Alhassane, relu en PR par B et C |
+| Claude Code | Alhassane | Exécution par le moteur des simulateurs publiés depuis l'éditeur (`getExecutableSimulator` dans `packages/db`, catalogue et cache du moteur) | Alhassane, relu en PR par B et C |
 | Claude Code | Iza | B0 : types d'événements temps réel partagés (`packages/shared`) | Iza, relu en PR par A |
 | Claude Code | Iza | B1 : route SSE (`/api/projects/:id/stream`) et route de confirmation téléphone | Iza, relu en PR par A et C |
 | Claude Code | Iza | B2 : écran du téléphone simulé (interface) | Iza, relu en PR par A |

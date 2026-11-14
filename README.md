@@ -68,6 +68,8 @@ La page **Démo boutique** montre le même parcours dans une petite boutique en 
 
 Un simulateur est un fichier YAML validé par un JSON Schema commun ([`packages/shared/src/schema.ts`](packages/shared/src/schema.ts)) : le même contrôle est fait dans l'éditeur, par l'API, par le moteur et sur la sortie de l'assistant IA. Taille maximale : 64 Ko.
 
+**Publié, il répond tout de suite.** Un simulateur publié depuis l'éditeur est appelable sur `https://sim.hifrica.site/<slug>/…` (le `slug` est son `name`), avec une clé de test, comme ceux livrés avec la plateforme. C'est vrai aussi pour ceux marqués **« Généré par IA, à vérifier »** : relisez-les avant de vous y fier. Une nouvelle version est prise en compte au plus 30 secondes après sa publication, et un simulateur retiré du catalogue cesse de répondre dans le même délai. Si un simulateur livré avec la plateforme (dossier `simulators/`) porte le même nom, c'est lui qui répond.
+
 ### Simulateur HTTP
 
 ```yaml
