@@ -1,7 +1,8 @@
-/* Propriétaire : Dev C — cadre de smartphone de la boutique de démonstration (DeviceFrame.tsx).
+/* Propriétaire : Dev C — smartphone générique Hifrica de la boutique de démonstration (DeviceFrame.tsx).
    Tout est limité à `.device` : le téléphone simulé de B (SimulatedPhone, classes .phone-*) garde son
-   balisage et sa logique ; ces règles ne font que l'habiller façon iOS à l'intérieur du cadre. Hors du cadre,
-   le style d'origine de B (styles.css) s'applique toujours. */
+   balisage et sa logique ; ces règles ne font que l'habiller en style mobile à l'intérieur du cadre. Hors du
+   cadre, le style d'origine de B (styles.css) s'applique toujours. Identité Hifrica : tokens de l'application
+   (--text, --accent, --font, --display), logo de l'équipe, surfaces pleines plutôt que verre dépoli. */
 
 /* ---- Colonne du téléphone dans la boutique ---- */
 .device-col { flex: 0 0 auto; width: 320px; position: sticky; top: calc(var(--topbar-h) + 1rem); }
@@ -12,14 +13,15 @@
 /* ---- Châssis ---- */
 .device {
   --dv-w: 320px;
-  --dv-bezel: 11px;
-  --dv-radius: 55px;
-  --dv-ink: #f5f5f7;
-  --dv-ink-2: rgba(245, 245, 247, 0.72);
-  --dv-ink-3: rgba(245, 245, 247, 0.5);
-  --dv-glass: rgba(28, 30, 29, 0.72);
-  --dv-glass-strong: rgba(36, 38, 37, 0.9);
-  --dv-ease: cubic-bezier(0.2, 0.8, 0.2, 1);
+  --dv-bezel: 10px;
+  --dv-radius: 40px;
+  --dv-ink: var(--text);
+  --dv-ink-2: var(--text-2);
+  --dv-ink-3: var(--muted);
+  --dv-card: #121815;
+  --dv-card-2: #18201c;
+  --dv-line: rgba(255, 255, 255, 0.07);
+  --dv-ease: cubic-bezier(0.25, 0.8, 0.25, 1);
   width: min(var(--dv-w), 100%);
   font-family: var(--font);
   color: var(--dv-ink);
@@ -29,20 +31,17 @@
   height: 660px;
   padding: var(--dv-bezel);
   border-radius: var(--dv-radius);
-  /* Cadre façon métal brossé sombre : dégradé + liseré clair intérieur + ombre portée douce. */
-  background: linear-gradient(145deg, #3a3b3e 0%, #1d1e20 38%, #121314 62%, #2b2c2f 100%);
+  /* Graphite légèrement teinté du vert de la marque, liseré intérieur et ombre portée douce. */
+  background: linear-gradient(160deg, #26302b 0%, #161b18 45%, #0f1311 70%, #1f2723 100%);
   box-shadow:
-    inset 0 0 0 1.5px rgba(255, 255, 255, 0.09),
-    inset 0 0 0 3px #0a0a0b,
-    0 30px 60px -18px rgba(0, 0, 0, 0.65),
-    0 0 0 1px rgba(255, 255, 255, 0.04);
+    inset 0 0 0 1px rgba(62, 207, 142, 0.14),
+    inset 0 0 0 3px #0a0d0b,
+    0 28px 56px -20px rgba(0, 0, 0, 0.7);
 }
-/* Boutons latéraux (décoratifs) */
-.device-btn { position: absolute; width: 3px; border-radius: 2px; background: linear-gradient(180deg, #3d3e41, #1b1c1e); }
-.device-btn-action { left: -3px; top: 112px; height: 26px; border-radius: 2px 0 0 2px; }
-.device-btn-vol-up { left: -3px; top: 158px; height: 48px; border-radius: 2px 0 0 2px; }
-.device-btn-vol-down { left: -3px; top: 216px; height: 48px; border-radius: 2px 0 0 2px; }
-.device-btn-power { right: -3px; top: 176px; height: 74px; border-radius: 0 2px 2px 0; }
+/* Boutons latéraux génériques, à droite : bascule de volume et bouton d'alimentation (décoratifs). */
+.device-btn { position: absolute; right: -3px; width: 3px; border-radius: 0 2px 2px 0; background: linear-gradient(180deg, #2c3531, #141816); }
+.device-btn-volume { top: 128px; height: 70px; }
+.device-btn-power { top: 220px; height: 40px; }
 
 /* ---- Écran ---- */
 .device-screen {
@@ -52,60 +51,65 @@
   flex-direction: column;
   overflow: hidden;
   border-radius: calc(var(--dv-radius) - var(--dv-bezel));
-  /* Fond d'écran sombre aux couleurs Hifrica (vert de la marque, très atténué). */
+  /* Fond d'écran Hifrica : nuit verte, halo de la couleur de marque en haut à gauche. */
   background:
-    radial-gradient(120% 70% at 85% 0%, rgba(62, 207, 142, 0.22), transparent 60%),
-    radial-gradient(90% 60% at 0% 100%, rgba(0, 98, 57, 0.35), transparent 65%),
-    linear-gradient(180deg, #0c1411 0%, #070a09 100%);
+    radial-gradient(110% 60% at 10% 0%, rgba(62, 207, 142, 0.18), transparent 60%),
+    linear-gradient(200deg, #0b110e 0%, #060908 100%);
   isolation: isolate;
 }
 
-/* Dynamic Island : s'allonge discrètement pendant une demande de paiement ou une session USSD. */
-.device-island {
+/* Encoche fixe : caméra frontale ronde, centrée, sans animation. */
+.device-notch {
   position: absolute;
-  top: 11px;
+  top: 13px;
   left: 50%;
   z-index: 5;
-  width: 104px;
-  height: 31px;
-  transform: translateX(-50%);
-  border-radius: 999px;
-  background: #000;
-  box-shadow: 0 0 0 0.5px rgba(255, 255, 255, 0.04);
-  transition: width 0.45s var(--dv-ease), height 0.45s var(--dv-ease);
+  width: 12px;
+  height: 12px;
+  margin-left: -6px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 38% 38%, #1f2b26 0 22%, #050706 62%);
+  box-shadow: 0 0 0 2px #050706;
 }
-.device-island-cam { position: absolute; right: 12px; top: 50%; width: 10px; height: 10px; margin-top: -5px; border-radius: 50%; background: radial-gradient(circle at 35% 35%, #2b3a4a 0 25%, #0b0f14 60%); }
-.device-island-live { position: absolute; left: 14px; top: 50%; width: 7px; height: 7px; margin-top: -3.5px; border-radius: 50%; background: var(--accent); opacity: 0; transform: scale(0.4); transition: opacity 0.3s, transform 0.3s; }
-.device:has(.phone-amount) .device-island,
-.device:has(.phone-ussd-text) .device-island { width: 112px; }
-.device:has(.phone-amount) .device-island-live,
-.device:has(.phone-ussd-text) .device-island-live { opacity: 1; transform: none; animation: dv-breathe 2.4s ease-in-out infinite; }
-@keyframes dv-breathe { 50% { opacity: 0.45; } }
 
-/* Barre de statut */
+/* Barre de statut : heure et îlot de statut à gauche, icônes à droite, l'encoche entre les deux. */
 .device-status {
   position: relative;
   z-index: 4;
   flex: none;
-  height: 52px;
+  height: 40px;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 4px 22px 0 34px;
-  font-size: 0.93rem;
+  padding: 0 20px 0 22px;
+  font-size: 0.8rem;
   font-weight: 600;
-  letter-spacing: -0.01em;
   font-variant-numeric: tabular-nums;
 }
-.device-status-icons { display: inline-flex; align-items: center; gap: 5px; }
+.device-status-left { display: inline-flex; align-items: center; gap: 6px; min-width: 0; }
+.device-status-icons { display: inline-flex; align-items: center; gap: 6px; color: var(--dv-ink); }
 .device-status-icons svg { fill: currentColor; display: block; }
+.device-battery-fill { fill: var(--accent); }
 
-/* Écran verrouillé : date et heure réelles, réduites quand une interaction occupe l'écran. */
-.device-lock { flex: none; display: flex; flex-direction: column; align-items: center; padding: 4px 0 10px; text-align: center; transition: padding 0.4s var(--dv-ease); }
-.device-lock-date { font-size: 0.86rem; font-weight: 500; color: var(--dv-ink-2); text-transform: capitalize; }
-.device-lock-time { font-family: var(--display); font-size: 4.1rem; line-height: 1.02; font-weight: 600; letter-spacing: -0.03em; font-variant-numeric: tabular-nums; color: rgba(245, 245, 247, 0.94); transition: font-size 0.4s var(--dv-ease); }
-.device:has(.phone-card:not(.phone-idle)) .device-lock { padding-bottom: 6px; }
-.device:has(.phone-card:not(.phone-idle)) .device-lock-time { font-size: 2.3rem; }
+/* Îlot de statut : pastille verte indépendante de l'encoche, visible seulement pendant un paiement ou une
+   session USSD (état lu dans le balisage de B). Libellé décoratif ; l'information réelle est dans l'écran. */
+.device-activity { display: none; align-items: center; gap: 4px; height: 18px; padding: 0 7px 0 6px; border-radius: 6px; background: rgba(62, 207, 142, 0.16); color: var(--accent); font-size: 0.62rem; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; }
+.device-activity::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: var(--accent); }
+.device:has(.phone-amount) .device-activity,
+.device:has(.phone-ussd-text) .device-activity { display: inline-flex; animation: dv-fade 0.25s var(--dv-ease) both; }
+.device:has(.phone-amount) .device-activity::after { content: "Paiement"; }
+.device:has(.phone-ussd-text) .device-activity::after { content: "USSD"; }
+.device:has(.phone-amount) .device-activity::before,
+.device:has(.phone-ussd-text) .device-activity::before { animation: dv-pulse 1.8s ease-in-out infinite; }
+
+/* Horloge d'écran verrouillé : bloc compact aligné à gauche, marque Hifrica, heure et date réelles. */
+.device-lock { flex: none; display: flex; flex-direction: column; align-items: flex-start; padding: 14px 22px 16px; }
+.device-lock-brand { display: inline-flex; align-items: center; gap: 6px; font-size: 0.72rem; font-weight: 600; color: var(--dv-ink-2); letter-spacing: 0.02em; }
+.device-lock-brand img { width: 16px; height: 16px; border-radius: 4px; }
+.device-lock-time { margin-top: 6px; font-family: var(--display); font-size: 2.9rem; line-height: 1; font-weight: 600; letter-spacing: -0.02em; font-variant-numeric: tabular-nums; color: var(--dv-ink); }
+.device-lock-date { margin-top: 4px; font-size: 0.8rem; color: var(--dv-ink-3); text-transform: capitalize; }
+.device:has(.phone-card:not(.phone-idle)) .device-lock { padding-bottom: 10px; }
+.device:has(.phone-card:not(.phone-idle)) .device-lock-time { font-size: 1.9rem; }
 
 /* Zone interactive : défile si le contenu dépasse (plusieurs SMS) ; la barre d'accueil reste visible. */
 .device-content {
@@ -113,11 +117,11 @@
   min-height: 0;
   overflow-y: auto;
   overscroll-behavior: contain;
-  padding: 0 12px 28px;
+  padding: 0 12px 26px;
   scrollbar-width: none;
 }
 .device-content::-webkit-scrollbar { display: none; }
-.device-home { position: absolute; z-index: 6; left: 50%; bottom: 8px; width: 118px; height: 5px; transform: translateX(-50%); border-radius: 999px; background: rgba(245, 245, 247, 0.85); pointer-events: none; }
+.device-home { position: absolute; z-index: 6; left: 50%; bottom: 9px; width: 96px; height: 4px; margin-left: -48px; border-radius: 2px; background: rgba(237, 237, 237, 0.5); pointer-events: none; }
 
 /* =====================================================================================================
    Habillage du téléphone simulé de B à l'intérieur du cadre (balisage et logique inchangés)
@@ -125,110 +129,105 @@
 .device .phone { max-width: none; border: 0; border-radius: 0; background: transparent; box-shadow: none; overflow: visible; display: flex; flex-direction: column; gap: 12px; }
 /* Titre « Téléphone simulé » : masqué visuellement, conservé pour les lecteurs d'écran. */
 .device .phone-head { position: absolute; width: 1px; height: 1px; padding: 0; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
-/* position: static : le bandeau (.phone-toast) se cale sur l'écran, sous la Dynamic Island. */
+/* position: static : le bandeau (.phone-toast) se cale sur l'écran, sous la barre de statut. */
 .device .phone-screen { position: static; min-height: 0; padding: 0; display: block; background: transparent; }
 
-/* Feuille système (paiement, PIN, USSD) */
+/* Carte d'action Hifrica (paiement, PIN, USSD) : surface pleine, filet vert en haut. */
 .device .phone-card {
   width: 100%;
-  padding: 16px 16px 14px;
-  border-radius: 22px;
-  background: var(--dv-glass-strong);
-  border: 1px solid rgba(255, 255, 255, 0.07);
-  box-shadow: 0 12px 30px -12px rgba(0, 0, 0, 0.7);
-  -webkit-backdrop-filter: blur(22px) saturate(1.4);
-  backdrop-filter: blur(22px) saturate(1.4);
+  padding: 16px 14px 14px;
+  border-radius: 14px;
+  background: var(--dv-card);
+  border: 1px solid var(--dv-line);
+  box-shadow: inset 0 3px 0 var(--accent), 0 10px 24px -14px rgba(0, 0, 0, 0.8);
   color: var(--dv-ink);
   text-align: center;
   font-size: 0.86rem;
-  animation: dv-sheet 0.42s var(--dv-ease) both;
+  animation: dv-rise 0.3s var(--dv-ease) both;
 }
 .device .phone-card p { color: var(--dv-ink-2); margin: 0.2rem 0; line-height: 1.4; }
 .device .phone-card p.muted, .device .phone-card .muted { color: var(--dv-ink-3); }
-.device .phone-card code { color: var(--dv-ink); background: rgba(255, 255, 255, 0.1); padding: 0 0.3em; border-radius: 4px; }
-.device .phone-amount { margin: 0.1rem 0 0.35rem !important; font-family: var(--display); font-size: 1.95rem !important; line-height: 1.1; letter-spacing: -0.02em; color: var(--dv-ink) !important; }
+.device .phone-card code { color: var(--dv-ink); background: rgba(255, 255, 255, 0.08); padding: 0 0.3em; border-radius: 4px; }
+.device .phone-amount { margin: 0.1rem 0 0.35rem !important; font-family: var(--display); font-size: 1.8rem !important; line-height: 1.1; letter-spacing: -0.01em; color: var(--dv-ink) !important; }
 .device .phone-card .row { flex-wrap: nowrap; }
-.device .phone-card .row > .btn { flex: 1; justify-content: center; height: 40px; border-radius: 999px; font-size: 0.86rem; font-weight: 600; }
+.device .phone-card .row > .btn { flex: 1; justify-content: center; height: 38px; border-radius: 10px; font-size: 0.84rem; font-weight: 600; }
 .device .phone-card .btn-primary { background: var(--accent); border-color: var(--accent); color: #062b19; }
 .device .phone-card .btn-primary:hover:not(:disabled) { background: #52d99c; border-color: #52d99c; }
-.device .phone-card .btn-danger { background: rgba(242, 85, 90, 0.14); border-color: transparent; color: #ff8a8e; }
-.device .phone-card .btn-ghost { background: rgba(255, 255, 255, 0.1); color: var(--dv-ink); }
-.device .phone-card .input { height: 42px; border-radius: 12px; background: rgba(0, 0, 0, 0.35); border-color: rgba(255, 255, 255, 0.12); color: var(--dv-ink); text-align: center; font-size: 1rem; }
-.device .phone-card input[type="password"] { letter-spacing: 0.6em; font-size: 1.25rem; margin-top: 0.6rem; }
+.device .phone-card .btn-danger { background: transparent; border-color: rgba(242, 85, 90, 0.45); color: #ff8a8e; }
+.device .phone-card .btn-ghost { background: var(--dv-card-2); border-color: var(--dv-line); color: var(--dv-ink); }
+.device .phone-card .input { height: 40px; border-radius: 10px; background: #0a0f0c; border-color: rgba(255, 255, 255, 0.12); color: var(--dv-ink); text-align: center; font-size: 1rem; }
+.device .phone-card input[type="password"] { letter-spacing: 0.5em; font-size: 1.2rem; margin-top: 0.6rem; }
 .device .phone-card .row .input { text-align: left; font-size: 0.9rem; }
-.device .phone-card .input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(62, 207, 142, 0.22); }
-/* USSD : boîte de dialogue système */
-.device .phone-ussd-text { margin: 0 0 0.25rem; font-family: var(--font); font-size: 0.92rem; line-height: 1.45; color: var(--dv-ink); text-align: left; white-space: pre-wrap; overflow-wrap: anywhere; }
+.device .phone-card .input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(62, 207, 142, 0.2); }
+/* USSD : texte du menu aligné à gauche, police de l'application. */
+.device .phone-ussd-text { margin: 0 0 0.25rem; font-family: var(--font); font-size: 0.9rem; line-height: 1.45; color: var(--dv-ink); text-align: left; white-space: pre-wrap; overflow-wrap: anywhere; }
 
-/* Repos : pas de feuille, seulement l'action disponible (composer le code USSD) ou un état discret. */
-.device .phone-card.phone-idle { padding: 4px 0; background: transparent; border: 0; box-shadow: none; -webkit-backdrop-filter: none; backdrop-filter: none; animation: none; }
-.device .phone-idle .btn { height: 38px; padding: 0 1.1rem; border-radius: 999px; background: rgba(255, 255, 255, 0.12); color: var(--dv-ink); font-weight: 600; -webkit-backdrop-filter: blur(16px); backdrop-filter: blur(16px); }
-.device .phone-idle .btn:hover:not(:disabled) { background: rgba(255, 255, 255, 0.18); }
+/* Repos : pas de carte, seulement l'action disponible (composer le code USSD) ou un état discret. */
+.device .phone-card.phone-idle { padding: 2px 0; background: transparent; border: 0; box-shadow: none; text-align: left; animation: none; }
+.device .phone-idle .btn { height: 36px; padding: 0 0.9rem; border-radius: 10px; background: var(--dv-card-2); border: 1px solid var(--dv-line); color: var(--dv-ink); font-weight: 600; }
+.device .phone-idle .btn:hover:not(:disabled) { border-color: rgba(62, 207, 142, 0.45); }
 .device .phone-idle .muted { color: var(--dv-ink-3); font-size: 0.8rem; }
 
-/* Bandeau (résultat d'action, erreur USSD) : en haut de l'écran, sous la Dynamic Island. */
+/* Bandeau (résultat d'action, erreur USSD) : sous la barre de statut, filet vert à gauche. */
 .device .phone-toast {
   position: absolute;
   z-index: 7;
-  top: 50px;
+  top: 44px;
   left: 10px;
   right: 10px;
   bottom: auto;
-  padding: 11px 14px;
-  border-radius: 18px;
-  background: var(--dv-glass-strong);
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  box-shadow: 0 14px 30px -10px rgba(0, 0, 0, 0.75);
-  -webkit-backdrop-filter: blur(22px);
-  backdrop-filter: blur(22px);
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: var(--dv-card-2);
+  border: 1px solid var(--dv-line);
+  border-left: 3px solid var(--accent);
+  box-shadow: 0 12px 26px -12px rgba(0, 0, 0, 0.85);
   color: var(--dv-ink);
   font-size: 0.82rem;
   line-height: 1.4;
   text-align: left;
   overflow-wrap: anywhere;
-  animation: dv-banner 0.45s var(--dv-ease) both;
+  animation: dv-fade 0.25s var(--dv-ease) both;
 }
 
-/* ---- SMS : centre de notifications ---- */
+/* ---- SMS : notifications Hifrica ---- */
 .device .phone-sms { border: 0; padding: 0; max-height: none; overflow: visible; }
-.device .phone-sms-head { margin: 4px 4px 8px; font-size: 0.78rem; font-weight: 600; color: var(--dv-ink-2); }
+.device .phone-sms-head { margin: 4px 2px 8px; font-size: 0.7rem; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: var(--dv-ink-3); }
 .device .phone-sms-head svg { display: none; }
 .device .phone-sms-head .muted { color: var(--dv-ink-3); }
-.device .phone-sms-empty { margin: 0 4px; font-size: 0.8rem; color: var(--dv-ink-3); }
+.device .phone-sms-empty { margin: 0 2px; font-size: 0.8rem; color: var(--dv-ink-3); }
 .device .phone-sms-list { gap: 8px; }
 .device .phone-sms-list li {
   display: grid;
-  grid-template-columns: 34px minmax(0, 1fr);
+  grid-template-columns: 26px minmax(0, 1fr);
   column-gap: 10px;
-  row-gap: 1px;
+  row-gap: 2px;
   align-items: start;
-  padding: 11px 13px;
-  border-radius: 20px;
-  background: var(--dv-glass);
-  border: 1px solid rgba(255, 255, 255, 0.06);
-  -webkit-backdrop-filter: blur(20px) saturate(1.3);
-  backdrop-filter: blur(20px) saturate(1.3);
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: var(--dv-card);
+  border: 1px solid var(--dv-line);
+  border-left: 3px solid var(--accent);
   font-size: 0.82rem;
-  animation: dv-notif 0.5s var(--dv-ease) both;
+  animation: dv-fade 0.3s var(--dv-ease) both;
 }
-/* Icône de l'app Messages, dessinée en CSS (bulle blanche sur fond vert de la marque). */
+/* Icône de la notification : le logo Hifrica. */
 .device .phone-sms-list li::before {
   content: "";
   grid-row: 1 / span 2;
-  width: 34px;
-  height: 34px;
-  border-radius: 9px;
-  background:
-    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath fill='white' d='M12 4C7 4 3 7.3 3 11.4c0 2.3 1.3 4.4 3.3 5.7-.2 1.2-.8 2.3-1.7 3.1 1.9-.1 3.6-.8 4.8-1.9.8.2 1.7.3 2.6.3 5 0 9-3.3 9-7.3S17 4 12 4z'/%3E%3C/svg%3E") center / 20px no-repeat,
-    linear-gradient(180deg, #5be3a4, #2fae74);
+  width: 26px;
+  height: 26px;
+  border-radius: 7px;
+  background: url("/logo.png") center / cover no-repeat;
 }
-.device .phone-sms-list strong { font-size: 0.82rem; font-weight: 600; color: var(--dv-ink); overflow-wrap: anywhere; }
+.device .phone-sms-list strong { font-size: 0.78rem; font-weight: 700; color: var(--dv-ink); overflow-wrap: anywhere; }
+.device .phone-sms-list strong::before { content: "SMS · "; font-weight: 600; color: var(--dv-ink-3); }
 .device .phone-sms-list span { color: var(--dv-ink-2); line-height: 1.38; overflow-wrap: anywhere; }
 
 /* ---- Animations discrètes ---- */
-@keyframes dv-sheet { from { opacity: 0; transform: translateY(14px) scale(0.98); } }
-@keyframes dv-banner { from { opacity: 0; transform: translateY(-14px) scale(0.97); } }
-@keyframes dv-notif { from { opacity: 0; transform: translateY(-10px) scale(0.97); } }
+@keyframes dv-rise { from { opacity: 0; transform: translateY(8px); } }
+@keyframes dv-fade { from { opacity: 0; transform: translateY(-4px); } }
+@keyframes dv-pulse { 50% { opacity: 0.35; } }
 
 @media (prefers-reduced-motion: reduce) {
   .device *, .device *::before, .device *::after { animation: none !important; transition: none !important; }
@@ -236,8 +235,7 @@
 
 /* ---- Petits écrans : le téléphone garde ses proportions dans la largeur disponible ---- */
 @media (max-width: 400px) {
-  .device { --dv-bezel: 9px; --dv-radius: 48px; }
+  .device { --dv-bezel: 9px; --dv-radius: 36px; }
   .device-chassis { height: 600px; }
-  .device-lock-time { font-size: 3.4rem; }
-  .device-status { padding: 4px 22px 0 28px; }
+  .device-lock-time { font-size: 2.5rem; }
 }
