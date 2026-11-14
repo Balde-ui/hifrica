@@ -13,6 +13,7 @@
 //   AI_REQUEST_DEADLINE_MS  échéance globale d'une requête ; défaut 90000 (504 ai_timeout au-delà)
 //   AI_DEEPSEEK_TIMEOUT_MS  délai d'un appel DeepSeek ; défaut 30000
 //   AI_GEMINI_TIMEOUT_MS    délai d'un appel Gemini ; défaut 45000 (les deux restent bornés par l'échéance globale)
+//   AI_GEMINI_RETRY_DELAY_MS  attente avant l'unique réessai Gemini sur http_503 / http_429 ; défaut 2000
 //   VALKEY_URL              compteurs de quota persistants (sinon en mémoire)
 import type { FastifyPluginAsync, FastifyRequest } from "fastify";
 import { requireUser, type AuthenticatedUser } from "../auth.js";

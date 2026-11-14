@@ -87,6 +87,9 @@ export const DEFAULT_GEMINI_TIMEOUT_MS = 45_000;
 const DEEPSEEK_MAX_TOKENS = 8000;
 /** Gemini : les tokens de réflexion sont pris sur le même budget que la réponse. */
 const GEMINI_MAX_OUTPUT_TOKENS = 16_000;
+/** Gemini surchargé (http_503, http_429) : UN réessai après ce délai, dans l'échéance globale. Réglable par AI_GEMINI_RETRY_DELAY_MS. */
+export const DEFAULT_GEMINI_RETRY_DELAY_MS = 2_000;
+const OVERLOAD_REASONS: ReadonlySet<string> = new Set(["http_503", "http_429"]);
 /** Appels HTTP par essai : 1 + 1 réessai si la réponse est vide ou illisible. */
 const CALLS_PER_COMPLETION = 2;
 
@@ -94,10 +97,51 @@ type Env = Record<string, string | undefined>;
 
 const noopLogger: ProviderLogger = { info: () => undefined, warn: () => undefined };
 
+/** Attente annulable : rejette dès que la requête est annulée (client parti, échéance globale). */
+function pause(ms: number, signal: AbortSignal): Promise<void> {
+  if (signal.aborted) return Promise.reject(abortReason(signal));
+  return new Promise((resolve, reject) => {
+    const onAbort = () => {
+      clearTimeout(timer);
+      reject(abortReason(signal));
+    };
+    const timer = setTimeout(() => {
+      signal.removeEventListener("abort", onAbort);
+      resolve();
+    }, ms);
+    signal.addEventListener("abort", onAbort, { once: true });
+  });
+}
+
+/**
+ * Fournisseur surchargé (http_503 ou http_429) : UN réessai après `delayMs` par complétion, avant d'abandonner.
+ * L'attente et le réessai restent soumis à l'échéance globale et au budget d'appels de la requête.
+ */
+function withOverloadRetry<T>(provider: ProviderName, call: () => Promise<T>, ctx: CallContext, log: ProviderLogger, delayMs: number): () => Promise<T> {
+  let retried = false;
+  return async () => {
+    try {
+      return await call();
+    } catch (err) {
+      if (retried || !(err instanceof ProviderError) || !OVERLOAD_REASONS.has(err.reason)) throw err;
+      retried = true;
+      log.warn({ provider, reason: err.reason, delayMs }, "fournisseur IA surchargé, nouvel essai");
+      await pause(delayMs, ctx.signal);
+      return call();
+    }
+  };
+}
+
 /** Délai par appel lu dans l'environnement : entier strictement positif, sinon la valeur par défaut. */
 function timeoutFromEnv(value: string | undefined, fallback: number): number {
   const parsed = Number(value);
   return value && Number.isInteger(parsed) && parsed > 0 ? parsed : fallback;
+}
+
+/** Attente lue dans l'environnement : entier positif ou nul (0 : réessai immédiat), sinon la valeur par défaut. */
+function delayFromEnv(value: string | undefined, fallback: number): number {
+  const parsed = Number(value);
+  return value && Number.isInteger(parsed) && parsed >= 0 ? parsed : fallback;
 }
 
 /**
@@ -107,10 +151,11 @@ function timeoutFromEnv(value: string | undefined, fallback: number): number {
 export function readCompletion(
   provider: ProviderName,
   text: string | undefined | null,
-): { yaml: string; form: ExtractionForm; repaired: boolean; prefixSkipped: boolean } {
+): { yaml: string; form: ExtractionForm; repaired: boolean; prefixSkipped: boolean; rescuedByYamlSlice: boolean } {
   const result = extractSimulatorYaml(text);
   if (!result.ok) throw new ProviderError(provider, "unreadable", result.shape);
-  return { yaml: result.yaml, form: result.form, repaired: result.repaired, prefixSkipped: result.prefixSkipped };
+  const { yaml, form, repaired, prefixSkipped, rescuedByYamlSlice } = result;
+  return { yaml, form, repaired, prefixSkipped, rescuedByYamlSlice };
 }
 
 /** Texte YAML du simulateur ; lève "unreadable" sinon. */
@@ -185,9 +230,12 @@ async function completeWithRetry(
     const empty = typeof raw.text !== "string" || raw.text.trim() === "";
     log.info({ provider, call: n, ...raw.meta, empty, contentLength: raw.text?.length ?? 0 }, "appel IA");
     try {
-      const { yaml, form, repaired, prefixSkipped } = readCompletion(provider, raw.text);
+      const { yaml, form, repaired, prefixSkipped, rescuedByYamlSlice } = readCompletion(provider, raw.text);
       // Forme seulement (types, noms de clés, indicateurs), jamais le contenu.
-      if (repaired) log.info({ provider, call: n, form, prefixSkipped, shape: describeShape(raw.text ?? "", { repaired }) }, "réponse IA réparée");
+      if (repaired || rescuedByYamlSlice) {
+        const shape = describeShape(raw.text ?? "", { repaired, rescuedByYamlSlice });
+        log.info({ provider, call: n, form, prefixSkipped, shape }, "réponse IA réparée");
+      }
       else if (form !== "json_yaml_string" || prefixSkipped) log.info({ provider, call: n, form, prefixSkipped }, "réponse IA lue sous une forme non standard");
       return yaml;
     } catch (err) {
@@ -259,7 +307,7 @@ interface GeminiResponse {
   };
 }
 
-function gemini(apiKey: string, model: string, fetchImpl: typeof fetch, timeoutMs: number): Provider {
+function gemini(apiKey: string, model: string, fetchImpl: typeof fetch, timeoutMs: number, retryDelayMs: number): Provider {
   // thinkingLevel n'existe qu'à partir de Gemini 3 (erreur sur les modèles 2.x).
   const thinkingConfig = /^gemini-([3-9]|\d{2,})/.test(model) ? { thinkingConfig: { thinkingLevel: "low" } } : {};
   const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`;
@@ -277,10 +325,17 @@ function gemini(apiKey: string, model: string, fetchImpl: typeof fetch, timeoutM
           ...thinkingConfig,
         },
       };
+      const post = withOverloadRetry(
+        "gemini",
+        () => postJson("gemini", fetchImpl, url, { "x-goog-api-key": apiKey }, body, ctx, timeoutMs),
+        ctx,
+        log,
+        retryDelayMs,
+      );
       return completeWithRetry(
         "gemini",
         async () => {
-          const data = (await postJson("gemini", fetchImpl, url, { "x-goog-api-key": apiKey }, body, ctx, timeoutMs)) as GeminiResponse | null;
+          const data = (await post()) as GeminiResponse | null;
           const candidate = data?.candidates?.[0];
           const parts = candidate?.content?.parts;
           const text = parts?.filter((p) => !p.thought && typeof p.text === "string").map((p) => p.text).join("");
@@ -311,7 +366,8 @@ export function createProviders(env: Env = process.env, fetchImpl: typeof fetch 
   }
   if (env.GEMINI_API_KEY) {
     const timeoutMs = timeoutFromEnv(env.AI_GEMINI_TIMEOUT_MS, DEFAULT_GEMINI_TIMEOUT_MS);
-    providers.push(gemini(env.GEMINI_API_KEY, env.GEMINI_MODEL || DEFAULT_GEMINI_MODEL, fetchImpl, timeoutMs));
+    const retryDelayMs = delayFromEnv(env.AI_GEMINI_RETRY_DELAY_MS, DEFAULT_GEMINI_RETRY_DELAY_MS);
+    providers.push(gemini(env.GEMINI_API_KEY, env.GEMINI_MODEL || DEFAULT_GEMINI_MODEL, fetchImpl, timeoutMs, retryDelayMs));
   }
   return providers;
 }
