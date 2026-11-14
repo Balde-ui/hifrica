@@ -675,6 +675,30 @@ describe("POST /api/simulators/generate", () => {
       });
     }
 
+    it("DeepSeek répond {\"yaml\": \"…\"} avec de vrais retours à la ligne → réparé, 200 dès le 1er appel, log « réponse IA réparée » sans contenu", async () => {
+      const raw = '{"yaml": "' + VALID_YAML.replace(/\\/g, "\\\\").replace(/"/g, '\\"') + '"}';
+      assert.ok(raw.includes("\n") && !raw.includes("\\n"), "retours à la ligne bruts, aucun échappé");
+      const f = fakeFetch({ deepseek: [deepseekRaw(raw)] });
+      const { app, logs } = await buildApp({ env: { DEEPSEEK_API_KEY: DEEPSEEK_KEY }, fetch: f.impl });
+      const res = await post(app, { description: DESCRIPTION });
+      assert.equal(res.statusCode, 200);
+      assert.equal(res.json().provider, "deepseek");
+      assert.deepEqual(parseYaml(res.json().yaml), SIM);
+      const repaired = logs.filter((l) => l.includes("réponse IA réparée"));
+      assert.equal(repaired.length, 1);
+      const entry = JSON.parse(repaired[0]) as { form: string; prefixSkipped: boolean; shape: Record<string, unknown> };
+      assert.equal(entry.form, "json_yaml_string");
+      assert.equal(entry.prefixSkipped, false);
+      assert.deepEqual(
+        { firstChar: entry.shape.firstChar, hasYamlKey: entry.shape.hasYamlKey, hasRawNewlineInString: entry.shape.hasRawNewlineInString, repaired: entry.shape.repaired, json: entry.shape.json },
+        { firstChar: "{", hasYamlKey: true, hasRawNewlineInString: true, repaired: true, json: false },
+      );
+      const all = logs.join("");
+      assert.ok(!all.includes("paiement-mobile") && !all.includes("checkout") && !all.includes("{{uuid}}"), "aucun contenu dans les logs");
+      assert.equal(f.calls.length, 1, "aucun nouvel essai");
+      f.assertDone();
+    });
+
     it("forme inconnue → « unreadable » avec un log de forme sans aucune donnée, puis bascule sur Gemini", async () => {
       const secret = "sk_test_FUITE0123456789 awa@boutique.sn";
       const odd = JSON.stringify({ reponse: `Voici le simulateur ${secret}`, details: { note: secret }, version: 2 });
@@ -686,7 +710,18 @@ describe("POST /api/simulators/generate", () => {
       const shapes = logs.filter((l) => l.includes("réponse IA illisible : forme reçue"));
       assert.equal(shapes.length, 2, "une forme par appel illisible");
       const shape = (JSON.parse(shapes[0]) as { shape: Record<string, unknown> }).shape;
-      assert.deepEqual(shape, { length: odd.length, fenced: false, json: true, topType: "object", keys: ["reponse", "details", "version"], valueTypes: ["string", "object", "number"] });
+      assert.deepEqual(shape, {
+        length: odd.length,
+        firstChar: "{",
+        hasYamlKey: false,
+        hasRawNewlineInString: false,
+        repaired: false,
+        fenced: false,
+        json: true,
+        topType: "object",
+        keys: ["reponse", "details", "version"],
+        valueTypes: ["string", "object", "number"],
+      });
       const all = logs.join("");
       assert.ok(!all.includes("FUITE") && !all.includes("awa@boutique.sn") && !all.includes("Voici le simulateur"), "aucun contenu dans les logs");
       assert.ok(logs.some((l) => l.includes('"reason":"unreadable"') && l.includes("fournisseur IA en échec")));

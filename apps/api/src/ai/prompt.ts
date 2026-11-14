@@ -52,7 +52,8 @@ export function buildSystemPrompt(exampleYaml?: string): string {
     "",
     "## Format de sortie",
     'Réponds uniquement avec un objet json de la forme {"yaml": "<le YAML complet>"}, sans texte autour ni bloc de code. ' +
-      "Le YAML est une chaîne json (retours à la ligne échappés en \\n).",
+      'Le YAML est une chaîne json. Dans la valeur "yaml", échappe chaque retour à la ligne en \\n : ' +
+      "la réponse doit être un JSON valide sur une seule ligne logique.",
   );
   return parts.join("\n");
 }

@@ -3,7 +3,7 @@
 // le contenu des réponses non plus : seulement finish_reason, le nombre de tokens, la taille et, pour une
 // réponse illisible, sa forme (types, noms de clés : voir extract.ts).
 import type { FastifyBaseLogger } from "fastify";
-import { extractSimulatorYaml, type ExtractionForm, type ResponseShape } from "./extract.js";
+import { describeShape, extractSimulatorYaml, type ExtractionForm, type ResponseShape } from "./extract.js";
 
 export type ProviderName = "deepseek" | "gemini";
 
@@ -104,10 +104,13 @@ function timeoutFromEnv(value: string | undefined, fallback: number): number {
  * Texte YAML du simulateur dans la réponse du modèle (formes tolérées : voir extract.ts), avec la forme
  * reconnue ; lève ProviderError "unreadable" (avec la forme de la réponse, sans contenu) sinon.
  */
-export function readCompletion(provider: ProviderName, text: string | undefined | null): { yaml: string; form: ExtractionForm } {
+export function readCompletion(
+  provider: ProviderName,
+  text: string | undefined | null,
+): { yaml: string; form: ExtractionForm; repaired: boolean; prefixSkipped: boolean } {
   const result = extractSimulatorYaml(text);
   if (!result.ok) throw new ProviderError(provider, "unreadable", result.shape);
-  return { yaml: result.yaml, form: result.form };
+  return { yaml: result.yaml, form: result.form, repaired: result.repaired, prefixSkipped: result.prefixSkipped };
 }
 
 /** Texte YAML du simulateur ; lève "unreadable" sinon. */
@@ -182,8 +185,10 @@ async function completeWithRetry(
     const empty = typeof raw.text !== "string" || raw.text.trim() === "";
     log.info({ provider, call: n, ...raw.meta, empty, contentLength: raw.text?.length ?? 0 }, "appel IA");
     try {
-      const { yaml, form } = readCompletion(provider, raw.text);
-      if (form !== "json_yaml_string") log.info({ provider, call: n, form }, "réponse IA lue sous une forme non standard");
+      const { yaml, form, repaired, prefixSkipped } = readCompletion(provider, raw.text);
+      // Forme seulement (types, noms de clés, indicateurs), jamais le contenu.
+      if (repaired) log.info({ provider, call: n, form, prefixSkipped, shape: describeShape(raw.text ?? "", { repaired }) }, "réponse IA réparée");
+      else if (form !== "json_yaml_string" || prefixSkipped) log.info({ provider, call: n, form, prefixSkipped }, "réponse IA lue sous une forme non standard");
       return yaml;
     } catch (err) {
       // Diagnostic sans fuite : la forme de la réponse (types, noms de clés), jamais son contenu.
