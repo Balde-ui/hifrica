@@ -22,6 +22,10 @@ Déclaration exigée par l'article 6 du règlement CADEV 2026 : outils utilisés
 | Claude Code | Mamadou | C4 (couche de données) : erreurs sûres et validation des données (E1) | Mamadou, relu en PR par A et B (#8) |
 | Claude Code | Mamadou | C2 à C5 : comptes Better Auth, projets, clés de test hachées et affichées une seule fois, vraie clé et scénario actif dans le moteur, journal des requêtes et console, catalogue, éditeur YAML et fork, boutique de démonstration | Mamadou, relu en PR par A et B (#12) |
 | Claude Code | Mamadou | Refonte de l'interface (`apps/web`) : design system, pages, responsive, accessibilité, inspection visuelle automatisée (Playwright) | Mamadou, fusionnée par A (#12) |
+| Claude Code | Mamadou | C6 : réception des webhooks par la boutique de démonstration (`apps/api/src/demo-webhooks.ts`) : vérification de la signature partagée, anti-rejeu, déduplication atomique (script Lua Valkey), lecture réservée au propriétaire du projet | Mamadou, fusionnée par A (#24) |
+| Claude Code | Mamadou | Vue d'ensemble du projet (`apps/web/src/pages/Overview.tsx`) : utilisation sur 60 min / 24 h / 7 jours calculée sur le journal réel, statistiques partielles signalées au-delà de 500 requêtes, étapes « Bien démarrer », fenêtre « Connecter » | Mamadou, fusionnée par A (#24) |
+| Claude Code | Mamadou | Coquille du tableau de bord (barre latérale à trois modes, en-tête, menu du compte), validation serveur du nom à l'inscription, messages d'erreur de l'assistant IA, logo et favicons | Mamadou, fusionnée par A (#24) |
+| Claude Code | Mamadou | Cadre de smartphone générique de la boutique de démonstration (`DeviceFrame.tsx`, `device-frame.css`) autour du téléphone simulé de B, inchangé | Mamadou, en revue par A (#29) |
 | _à compléter_ | | | |
 
 Chaque contribution produite avec une IA est relue en pull request par un autre membre avant fusion, et les trois membres savent l'expliquer.
