@@ -561,6 +561,9 @@ describe("POST /api/simulators/generate", () => {
     // Règles A3/A4 : réutiliser l'id de la réponse dans les webhooks, marquer les étapes USSD sensibles.
     assert.match(messages[0].content, /\{\{response\.id\}\}.*jamais un nouveau \{\{uuid\}\}/);
     assert.match(messages[0].content, /sensitive: true sur toute étape USSD qui demande un PIN ou un code secret/);
+    // Opérateurs de match : exactement ceux de conditionHolds (moteur), jamais d'expression régulière.
+    assert.match(messages[0].content, /Dans `match`, utilise uniquement une valeur exacte ou les opérateurs >, <, >=, <=, != et contains, suivis d'un espace/);
+    assert.match(messages[0].content, /\(ex\. "> 500000", "contains test"\)\. Jamais d'expression régulière : elle ne serait jamais reconnue\./);
   });
 
   describe("session et quota par compte", () => {
