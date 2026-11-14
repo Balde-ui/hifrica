@@ -1,8 +1,8 @@
 import { useEffect, useState } from "react";
-import { api, errorMessage, isExecutable, type SimulatorSummary } from "../api.js";
+import { api, errorMessage, isExecutable, rankSimulators, type SimulatorSummary } from "../api.js";
 import { Link } from "../router.js";
 import { PageHead } from "../shell.js";
-import { Alert, Empty, Icon, Skeleton, SimulatorBadges } from "../ui.js";
+import { Alert, Empty, Icon, OnlineBadge, Skeleton, SimulatorBadges } from "../ui.js";
 
 export function CatalogPage() {
   const [q, setQ] = useState("");
@@ -18,7 +18,7 @@ export function CatalogPage() {
       if (kind) params.set("kind", kind);
       api<{ simulators: SimulatorSummary[] }>(`/api/simulators?${params}`, { signal: ctrl.signal })
         .then((r) => {
-          setItems([...r.simulators].sort((a, b) => Number(isExecutable(b)) - Number(isExecutable(a))));
+          setItems(rankSimulators(r.simulators));
           setError(null);
         })
         .catch((err) => {
@@ -85,7 +85,7 @@ export function CatalogPage() {
                   <Icon name={s.kind === "ussd" ? "phone" : "globe"} />
                 </span>
                 <span className="row" style={{ gap: "0.3rem" }}>
-                  {isExecutable(s) && <span className="badge badge-ok"><span className="dot" /> En ligne</span>}
+                  {isExecutable(s) && <OnlineBadge />}
                   <span className="badge">v{s.version}</span>
                 </span>
               </div>

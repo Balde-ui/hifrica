@@ -31,6 +31,7 @@ import {
 import { validateSimulatorYaml } from "@hifrica/shared";
 import { assertProjectOwner, requireUser, type AuthenticatedUser } from "./auth.js";
 import { registerDemoWebhooks } from "./demo-webhooks.js";
+import { summarize } from "./simulator-summary.js";
 
 export interface PlatformOptions {
   db: Database;
@@ -99,55 +100,6 @@ function keyView(k: typeof apiKeys.$inferSelect) {
     createdAt: k.createdAt,
     lastUsedAt: k.lastUsedAt,
     revokedAt: k.revokedAt,
-  };
-}
-
-interface SimulatorSummary {
-  slug: string;
-  kind: "http" | "ussd";
-  description: string | null;
-  origin: "manual" | "ai";
-  status: string;
-  version: string | null;
-  endpoints: { id: string; method: string; path: string }[];
-  scenarios: string[];
-  menus: number;
-  code: string | null;
-  publishedAt: Date | null;
-  forkedFrom: string | null;
-}
-
-function summarize(row: {
-  slug: string;
-  kind: "http" | "ussd";
-  description: string | null;
-  origin: "manual" | "ai";
-  status: string;
-  publishedAt: Date | null;
-  version: string | null;
-  yaml: string | null;
-  forkedFrom?: string | null;
-}): SimulatorSummary {
-  const parsed = row.yaml ? validateSimulatorYaml(row.yaml) : null;
-  const sim = (parsed?.valid ? parsed.simulator : {}) as {
-    endpoints?: { id: string; method: string; path: string }[];
-    scenarios?: Record<string, unknown>;
-    menus?: Record<string, unknown>;
-    code?: string;
-  };
-  return {
-    slug: row.slug,
-    kind: row.kind,
-    description: row.description,
-    origin: row.origin,
-    status: row.status,
-    version: row.version,
-    endpoints: (sim.endpoints ?? []).map((e) => ({ id: e.id, method: e.method, path: e.path })),
-    scenarios: Object.keys(sim.scenarios ?? {}),
-    menus: Object.keys(sim.menus ?? {}).length,
-    code: sim.code ?? null,
-    publishedAt: row.publishedAt,
-    forkedFrom: row.forkedFrom ?? null,
   };
 }
 

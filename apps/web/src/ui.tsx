@@ -129,6 +129,18 @@ export function Method({ method }: { method: string }) {
   return <span className={`method method-${method}`}>{method}</span>;
 }
 
+/**
+ * « En ligne » : le moteur exécute ce simulateur (propriété `executable` de l'API). Indépendant du statut
+ * de vérification : un simulateur communautaire ou généré par IA peut être en ligne sans être vérifié.
+ */
+export function OnlineBadge() {
+  return (
+    <span className="badge badge-ok" title="Exécuté par le moteur : appelable avec une clé de test">
+      <span className="dot" /> En ligne
+    </span>
+  );
+}
+
 export function SimulatorBadges({ status, origin }: { status: string; origin: string }) {
   return (
     <span className="row" style={{ gap: "0.3rem" }}>

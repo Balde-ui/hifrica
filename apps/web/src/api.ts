@@ -104,15 +104,33 @@ export interface SimulatorSummary {
   code: string | null;
   publishedAt: string | null;
   forkedFrom: string | null;
+  /** Exécuté par le moteur (absent si l'API est antérieure à ce champ). */
+  executable?: boolean;
 }
 
 /**
- * Le moteur (apps/engine) ne sert aujourd'hui que les simulateurs livrés avec le dépôt, importés en base
- * avec le statut « verified » et sans propriétaire. Un simulateur publié depuis l'éditeur est dans le
- * catalogue mais n'est pas encore exécuté (chargement depuis la base : évolution du moteur, à venir).
+ * Exécuté par le moteur (sim.hifrica.site/<slug>/…) : calculé par l'API avec les mêmes conditions que le
+ * moteur depuis #28 (statut draft, to_verify ou verified ; publié ; version courante ; YAML valide ; name
+ * égal au slug). Repli si l'API ne renvoie pas encore le champ : seuls les simulateurs vérifiés.
+ * Ce n'est pas un statut de vérification : un simulateur communautaire peut être exécuté sans être vérifié.
  */
-export function isExecutable(s: Pick<SimulatorSummary, "status">): boolean {
-  return s.status === "verified";
+export function isExecutable(s: Pick<SimulatorSummary, "status" | "executable">): boolean {
+  return s.executable ?? s.status === "verified";
+}
+
+/** Simulateur de référence des exemples (clés, console, boutique). */
+export const PREFERRED_SIMULATOR = "paiement-mobile-generique";
+
+/**
+ * Tri partagé, stable : les exécutés d'abord, parmi eux le simulateur de référence puis les vérifiés ;
+ * à égalité, l'ordre de l'API (publication la plus récente d'abord).
+ */
+export function rankSimulators<T extends Pick<SimulatorSummary, "slug" | "status" | "executable">>(list: readonly T[]): T[] {
+  const score = (s: T) => (isExecutable(s) ? 4 : 0) + (s.slug === PREFERRED_SIMULATOR ? 2 : 0) + (s.status === "verified" ? 1 : 0);
+  return list
+    .map((s, i) => ({ s, i, k: score(s) }))
+    .sort((a, b) => b.k - a.k || a.i - b.i)
+    .map((x) => x.s);
 }
 
 export interface LogEntry {

@@ -218,7 +218,9 @@ export function EditorPage() {
                   <strong>
                     {published.slug} {published.version}
                   </strong>{" "}
-                  est publié dans le catalogue sous licence CC BY 4.0 : réutilisable et adaptable par tous, avec attribution. <Link to={`/catalogue/${published.slug}`}>Voir sa documentation</Link>. Son exécution par le moteur arrive avec le chargement des simulateurs publiés.
+                  est publié dans le catalogue sous licence CC BY 4.0 : réutilisable et adaptable par tous, avec attribution. <Link to={`/catalogue/${published.slug}`}>Voir sa documentation</Link>. Le moteur l'exécute à l'adresse <code>/{published.slug}/…</code> avec
+                  une clé de test : comptez jusqu'à 10 secondes après une première publication, et jusqu'à 30 secondes pour qu'une nouvelle version
+                  remplace la précédente.
                 </Alert>
               )}
             </div>
