@@ -11,7 +11,10 @@
 // retours à la ligne dans la chaîne, donc un JSON invalide) :
 //   - JSON invalide commençant par « { » : les \n, \r et \t bruts À L'INTÉRIEUR des chaînes sont échappés
 //     (parcours caractère par caractère : dans une chaîne / hors chaîne, échappements), puis on réessaie ;
-//   - phrase avant le premier « { » ou avant une ligne « name: » : ce qui précède est ignoré.
+//   - phrase avant le premier « { » ou avant une ligne « name: » : ce qui précède est ignoré ;
+//   - en dernier recours (suite R3 : guillemets " non échappés dans la valeur, échappements invalides comme \'),
+//     pour un texte exactement de la forme {"yaml": "<VALEUR>"} : la VALEUR brute est prise entre le guillemet
+//     ouvrant et le DERNIER guillemet suivi seulement de blancs puis de « } », et désérialisée avec tolérance.
 // Rien n'est accepté ici sans validation : l'appelant passe toujours le résultat à validateSimulatorYaml.
 // Si rien ne convient, seule la FORME de la réponse est décrite (types, noms de clés), jamais son contenu.
 import { simulatorSchema } from "@hifrica/shared";
@@ -26,6 +29,8 @@ export type ExtractionForm =
   | "json_simulator"
   | "yaml_text";
 
+export type JsonErrorCategory = "bad_escape" | "unexpected_token" | "unterminated_string" | "other";
+
 export type ValueType = "string" | "number" | "boolean" | "null" | "array" | "object";
 
 /** Forme d'une réponse illisible : de quoi diagnostiquer, sans aucune valeur reçue. */
@@ -39,6 +44,13 @@ export interface ResponseShape {
   hasRawNewlineInString: boolean;
   /** La réparation des caractères de contrôle a servi à lire la réponse. */
   repaired: boolean;
+  /** La valeur "yaml" a été récupérée par découpe (étape de secours). */
+  rescuedByYamlSlice: boolean;
+  /**
+   * Erreur de JSON.parse sur le JSON candidat (depuis le premier « { », après échappement des contrôles bruts),
+   * en catégorie seulement : le message (qui cite un extrait du texte) n'est jamais recopié.
+   */
+  jsonError?: JsonErrorCategory;
   /** Clôture ``` en tête de réponse, et son langage normalisé. */
   fenced: boolean;
   fenceLang?: "json" | "yaml" | "other" | "none";
@@ -59,6 +71,8 @@ interface Found {
   repaired: boolean;
   /** Une phrase avant le JSON ou le YAML a été ignorée. */
   prefixSkipped: boolean;
+  /** La valeur "yaml" a été récupérée par découpe (guillemets non échappés, échappements invalides). */
+  rescuedByYamlSlice: boolean;
 }
 
 export type Extraction = ({ ok: true } & Found) | { ok: false; shape: ResponseShape };
@@ -152,6 +166,63 @@ function parseJsonLoose(text: string): { ok: true; value: unknown; repaired: boo
   return again.ok ? { ...again, repaired: true } : { ok: false };
 }
 
+/** Catégorie d'une erreur de JSON.parse, déduite de son message (jamais recopié : il cite le texte). */
+export function jsonErrorCategory(err: unknown): JsonErrorCategory {
+  const message = err instanceof Error ? err.message : "";
+  if (/^Bad (escaped character|Unicode escape)/.test(message)) return "bad_escape";
+  if (/^Unterminated string/.test(message)) return "unterminated_string";
+  if (/^(Unexpected token|Unexpected non-whitespace|Expected )/.test(message)) return "unexpected_token";
+  return "other";
+}
+
+/** Erreur du JSON candidat (après échappement des contrôles bruts), ou undefined s'il se lit. */
+function jsonErrorOf(candidate: string): JsonErrorCategory | undefined {
+  const scan = escapeRawControlsInStrings(candidate);
+  try {
+    JSON.parse(scan.text);
+    return undefined;
+  } catch (err) {
+    return jsonErrorCategory(err);
+  }
+}
+
+/** {"yaml": "<VALEUR>"} : un seul objet, une seule clé exactement "yaml" ; VALEUR jusqu'au DERNIER " avant la « } » finale. */
+const YAML_SLICE = /^\{\s*"yaml"\s*:\s*"([\s\S]*)"\s*\}$/;
+/** Dans la valeur découpée, ce qui ressemble à une clé JSON suivante (« ", "note": ») : il y avait plusieurs clés. */
+const NEXT_JSON_KEY = /"\s*,\s*"[^"\n]*"\s*:/;
+
+/**
+ * Désérialisation tolérante d'une chaîne JSON : \n \r \t \" \\ \/ et \uXXXX interprétés ; toute autre
+ * séquence \x (ex. \') donne x seul. Les guillemets non échappés et les caractères bruts restent tels quels.
+ */
+export function unescapeJsonLoose(raw: string): string {
+  const out: string[] = [];
+  for (let i = 0; i < raw.length; i++) {
+    const ch = raw[i];
+    if (ch !== "\\" || i === raw.length - 1) {
+      out.push(ch);
+      continue;
+    }
+    const next = raw[++i];
+    if (next === "n") out.push("\n");
+    else if (next === "r") out.push("\r");
+    else if (next === "t") out.push("\t");
+    else if (next === "u" && /^[0-9a-fA-F]{4}$/.test(raw.slice(i + 1, i + 5))) {
+      out.push(String.fromCharCode(parseInt(raw.slice(i + 1, i + 5), 16)));
+      i += 4;
+    } else out.push(next); // \" \\ \/ et toute séquence inconnue : le caractère seul
+  }
+  return out.join("");
+}
+
+/** Étape de secours : la valeur de {"yaml": "<VALEUR>"} malgré un JSON invalide ; null si la forme ne convient pas. */
+function sliceYamlValue(text: string): string | null {
+  const m = YAML_SLICE.exec(text);
+  if (!m || NEXT_JSON_KEY.test(m[1])) return null;
+  const value = unescapeJsonLoose(m[1]);
+  return value.trim() === "" ? null : unfence(value);
+}
+
 function tryParseYaml(text: string): unknown {
   try {
     return parseYaml(text);
@@ -224,14 +295,17 @@ function attempt(text: string, allowUnfence: boolean, allowPreamble: boolean): F
   const json = parseJsonLoose(text);
   if (json.ok) {
     const read = fromJson(json.value);
-    return read ? { ...read, repaired: json.repaired, prefixSkipped: false } : null;
+    return read ? { ...read, repaired: json.repaired, prefixSkipped: false, rescuedByYamlSlice: false } : null;
   }
+  // Après les réparations : JSON toujours invalide, mais de la forme {"yaml": "<VALEUR>"}.
+  const sliced = sliceYamlValue(text);
+  if (sliced !== null) return { yaml: sliced, form: "json_yaml_string", repaired: false, prefixSkipped: false, rescuedByYamlSlice: true };
   if (allowUnfence) {
     const m = FENCE.exec(text);
     if (m) return attempt(m[2].trim(), false, false);
   }
   const data = tryParseYaml(text);
-  const asYaml: Found | null = isSimulatorObject(data) ? { yaml: text, form: "yaml_text", repaired: false, prefixSkipped: false } : null;
+  const asYaml: Found | null = isSimulatorObject(data) ? { yaml: text, form: "yaml_text", repaired: false, prefixSkipped: false, rescuedByYamlSlice: false } : null;
   // « Voici le YAML :\nname: … » se lit aussi en YAML, avec la phrase comme clé en plus : on essaie alors sans
   // la phrase. Un YAML dont toutes les clés sont dans le schéma est pris tel quel (rien n'est retiré).
   if (asYaml && hasOnlySchemaKeys(data as Record<string, unknown>)) return asYaml;
@@ -249,7 +323,7 @@ function firstCharOf(trimmed: string): ResponseShape["firstChar"] {
 }
 
 /** Forme de la réponse : types et noms de clés seulement, jamais une valeur. */
-export function describeShape(text: string, options: { repaired?: boolean } = {}): ResponseShape {
+export function describeShape(text: string, options: { repaired?: boolean; rescuedByYamlSlice?: boolean } = {}): ResponseShape {
   const trimmed = text.trim();
   const fence = FENCE.exec(trimmed);
   const lang = fence?.[1].toLowerCase();
@@ -264,11 +338,17 @@ export function describeShape(text: string, options: { repaired?: boolean } = {}
     hasYamlKey: text.includes('"yaml"'),
     hasRawNewlineInString: brace >= 0 && escapeRawControlsInStrings(inner.slice(brace)).rawNewlines > 0,
     repaired: options.repaired ?? false,
+    rescuedByYamlSlice: options.rescuedByYamlSlice ?? false,
     fenced: Boolean(fence),
     ...(fence ? { fenceLang: lang === "json" ? "json" : lang === "yaml" || lang === "yml" ? "yaml" : lang ? "other" : "none" } : {}),
     json: json.ok,
     topType: structured ? typeOf(value) : "text",
   };
+  if (!json.ok && brace >= 0) {
+    const end = inner.lastIndexOf("}");
+    const jsonError = jsonErrorOf(inner.slice(brace, end > brace ? end + 1 : undefined));
+    if (jsonError) shape.jsonError = jsonError;
+  }
   if (structured && isPlainObject(value)) {
     const keys = Object.keys(value).slice(0, MAX_KEYS);
     shape.keys = keys.map((k) => (SAFE_KEY.test(k) ? k : "?"));
@@ -282,7 +362,17 @@ export function extractSimulatorYaml(text: string | undefined | null): Extractio
     const length = typeof text === "string" ? text.length : 0;
     return {
       ok: false,
-      shape: { length, firstChar: "autre", hasYamlKey: false, hasRawNewlineInString: false, repaired: false, fenced: false, json: false, topType: "text" },
+      shape: {
+        length,
+        firstChar: "autre",
+        hasYamlKey: false,
+        hasRawNewlineInString: false,
+        repaired: false,
+        rescuedByYamlSlice: false,
+        fenced: false,
+        json: false,
+        topType: "text",
+      },
     };
   }
   const found = attempt(text.trim(), true, true);

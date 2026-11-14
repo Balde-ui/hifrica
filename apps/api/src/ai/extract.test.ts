@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { validateSimulatorYaml } from "@hifrica/shared";
 import { parse } from "yaml";
-import { describeShape, escapeRawControlsInStrings, extractSimulatorYaml, type ExtractionForm } from "./extract.js";
+import { describeShape, escapeRawControlsInStrings, extractSimulatorYaml, jsonErrorCategory, unescapeJsonLoose, type ExtractionForm } from "./extract.js";
 import { loadExampleYaml } from "./prompt.js";
 
 const VALID_YAML = loadExampleYaml() ?? "";
@@ -82,6 +82,7 @@ describe("forme d'une réponse illisible (diagnostic sans fuite)", () => {
       hasYamlKey: false,
       hasRawNewlineInString: false,
       repaired: false,
+      rescuedByYamlSlice: false,
       fenced: false,
       json: true,
       topType: "object",
@@ -104,6 +105,7 @@ describe("forme d'une réponse illisible (diagnostic sans fuite)", () => {
       hasYamlKey: false,
       hasRawNewlineInString: false,
       repaired: false,
+      rescuedByYamlSlice: false,
       fenced: false,
       json: false,
       topType: "text",
@@ -193,7 +195,7 @@ describe("réparation : caractères de contrôle bruts dans les chaînes JSON (i
   const SECRET = "sk_test_FUITE0123456789";
   const notEnough: [string, string][] = [
     ["JSON à retours bruts tronqué", rawJson(VALID_YAML).slice(0, 400)],
-    ["guillemets non échappés dans la chaîne", '{"yaml": "' + VALID_YAML + '"}'],
+    // « guillemets non échappés » : désormais récupéré par l'étape de secours (voir plus bas).
     ["retours bruts mais objet sans simulateur", `{"reponse": "Voici\nla clé ${SECRET}\n"}`],
     ["phrase avant un texte qui n'est rien", "Voici ma réponse : { pas du json ni du yaml"],
   ];
@@ -228,5 +230,99 @@ describe("réparation : caractères de contrôle bruts dans les chaînes JSON (i
     for (const t of ["Voici", "kind: http", "1", "\"yaml\"", "ñ"]) assert.equal(describeShape(t).firstChar, "autre", t);
     const empty = extractSimulatorYaml("");
     assert.ok(!empty.ok && empty.shape.firstChar === "autre");
+  });
+});
+
+describe("secours : valeur yaml découpée malgré des guillemets non échappés ou des échappements invalides (incident R3, suite)", () => {
+  /** Variante de l'exemple avec une apostrophe (pour \') ; les " du YAML (body: { id: "{{uuid}}" … }) restent. */
+  const QUOTED_YAML = VALID_YAML.replace("description: Paiement mobile", "description: L'appli de paiement mobile");
+  const QUOTED_SIM = parse(QUOTED_YAML) as Record<string, unknown>;
+  assert.notEqual(QUOTED_YAML, VALID_YAML);
+  /** {"yaml": "…"} : \n échappés, mais guillemets intérieurs laissés bruts. */
+  const unescapedQuotes = (yaml: string) => '{"yaml": "' + yaml.replace(/\n/g, "\\n") + '"}';
+
+  it("désérialisation tolérante : \\n \\r \\t \\\" \\\\ \\/ \\uXXXX interprétés, \\x inconnu → x", () => {
+    assert.equal(unescapeJsonLoose('a\\nb\\rc\\td\\"e\\\\f\\/g\\u00e9h'), 'a\nb\rc\td"e\\f/géh');
+    assert.equal(unescapeJsonLoose("l\\'appli \\q \\u12zz"), "l'appli q u12zz");
+    assert.equal(unescapeJsonLoose('brut "guillemets" et\nretour'), 'brut "guillemets" et\nretour', "rien de brut n'est touché");
+    assert.equal(unescapeJsonLoose("fin\\"), "fin\\", "barre finale isolée conservée");
+  });
+
+  const accepted: [string, string, Record<string, unknown>, { repaired: boolean; prefixSkipped: boolean }][] = [
+    ["guillemets intérieurs non échappés", unescapedQuotes(VALID_YAML), SIM, { repaired: false, prefixSkipped: false }],
+    ["échappement invalide \\'", JSON.stringify({ yaml: QUOTED_YAML }).replace("L'appli", "L\\'appli"), QUOTED_SIM, { repaired: false, prefixSkipped: false }],
+    [
+      "guillemets non échappés + \\' + retours à la ligne bruts",
+      '{"yaml": "' + QUOTED_YAML.replace("L'appli", "L\\'appli") + '"}',
+      QUOTED_SIM,
+      { repaired: false, prefixSkipped: false },
+    ],
+    ["blancs autour de la clé et avant la « } » finale", '{ \n "yaml" :  "' + VALID_YAML.replace(/\n/g, "\\n") + '" \n }', SIM, { repaired: false, prefixSkipped: false }],
+    ["phrase avant + guillemets non échappés", "Voici le simulateur :\n" + unescapedQuotes(VALID_YAML), SIM, { repaired: false, prefixSkipped: true }],
+    ["```json … ``` + guillemets non échappés", "```json\n" + unescapedQuotes(VALID_YAML) + "\n```", SIM, { repaired: false, prefixSkipped: false }],
+  ];
+  for (const [label, text, expected, flags] of accepted) {
+    it(`${label} → accepté (json_yaml_string, rescuedByYamlSlice)`, () => {
+      assert.throws(() => JSON.parse(text.replace(/^[^{]*/, "").replace(/[^}]*$/, "")), "le JSON est bien invalide");
+      const result = extractSimulatorYaml(text);
+      assert.ok(result.ok, label);
+      assert.equal(result.form, "json_yaml_string");
+      assert.equal(result.rescuedByYamlSlice, true);
+      assert.deepEqual({ repaired: result.repaired, prefixSkipped: result.prefixSkipped }, flags);
+      const validation = validateSimulatorYaml(result.yaml);
+      assert.ok(validation.valid, validation.errors.join("; "));
+      assert.deepEqual(validation.simulator, expected);
+    });
+  }
+
+  it("JSON valide ou réparable : l'étape de secours ne sert pas", () => {
+    for (const text of [JSON.stringify({ yaml: VALID_YAML }), rawJson(VALID_YAML)]) {
+      const result = extractSimulatorYaml(text);
+      assert.ok(result.ok);
+      assert.equal(result.rescuedByYamlSlice, false);
+    }
+  });
+
+  const notApplicable: [string, string][] = [
+    ["deux clés (yaml puis note)", '{"yaml": "' + VALID_YAML.replace(/\n/g, "\\n") + '", "note": "voir "doc""}'],
+    ["deux clés (note puis yaml)", '{"note": "x", "yaml": "' + VALID_YAML.replace(/\n/g, "\\n") + '"}'],
+    ["clé ≠ yaml", '{"simulator": "' + VALID_YAML.replace(/\n/g, "\\n") + '"}'],
+    ["clé « Yaml »", '{"Yaml": "' + VALID_YAML.replace(/\n/g, "\\n") + '"}'],
+    ["valeur qui n'est pas une chaîne", '{"yaml": {"name": "x" "kind": "http"}}'],
+    ["valeur vide", '{"yaml": " "x}'],
+  ];
+  for (const [label, text] of notApplicable) {
+    it(`l'étape de secours ne s'applique pas (${label}) → refusé`, () => {
+      const result = extractSimulatorYaml(text);
+      assert.equal(result.ok, false);
+      if (!result.ok) assert.equal(result.shape.rescuedByYamlSlice, false);
+    });
+  }
+
+  const SECRET = "sk_test_FUITE0123456789";
+  it("JSON tronqué (guillemets non échappés, sans « \"} » final) → refusé, forme avec jsonError, sans contenu", () => {
+    const text = unescapedQuotes(VALID_YAML.replace("Paiement mobile", `Paiement ${SECRET}`)).slice(0, 500);
+    const result = extractSimulatorYaml(text);
+    assert.equal(result.ok, false);
+    if (result.ok) return;
+    assert.equal(result.shape.rescuedByYamlSlice, false);
+    assert.equal(result.shape.hasYamlKey, true);
+    assert.equal(result.shape.jsonError, "unexpected_token");
+    const serialized = JSON.stringify(result.shape);
+    for (const s of [SECRET, "paiement-mobile", "checkout", "{{uuid}}", "position", "Expected"]) assert.ok(!serialized.includes(s), `aucune donnée : ${s}`);
+  });
+
+  it("jsonError : catégorie seulement, déduite du message de JSON.parse", () => {
+    assert.equal(describeShape('{"yaml": "l\\\'appli"}').jsonError, "bad_escape");
+    assert.equal(describeShape('{"yaml": "\\u12zz"}').jsonError, "bad_escape");
+    assert.equal(describeShape('{"yaml": "un "mot" ici"}').jsonError, "unexpected_token");
+    assert.equal(describeShape('{"yaml": "tronqué').jsonError, "unterminated_string");
+    assert.equal(describeShape('{"yaml": "a\u0001b"}').jsonError, "other", "autre caractère de contrôle brut");
+    assert.equal(describeShape('{"yaml": ').jsonError, "other", "Unexpected end of JSON input");
+    assert.equal(describeShape('{"yaml": "ligne\nsuivante"}').jsonError, undefined, "contrôles bruts réparables : pas d'erreur restante");
+    assert.equal(describeShape(JSON.stringify({ yaml: "ok" })).jsonError, undefined);
+    assert.equal(describeShape("Voici du texte").jsonError, undefined, "aucun « { » : rien à décrire");
+    assert.equal(jsonErrorCategory(new Error("Unexpected token 'x', \"secret\" is not valid JSON")), "unexpected_token");
+    assert.equal(jsonErrorCategory("pas une erreur"), "other");
   });
 });

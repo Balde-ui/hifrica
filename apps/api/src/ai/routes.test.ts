@@ -338,8 +338,9 @@ describe("POST /api/simulators/generate", () => {
   });
 
   it("tous les fournisseurs en erreur → 503 ai_unavailable", async () => {
-    const f = fakeFetch({ deepseek: [{ status: 503 }], gemini: [{ status: 429 }] });
-    const { app } = await buildApp({ env: { DEEPSEEK_API_KEY: DEEPSEEK_KEY, GEMINI_API_KEY: GEMINI_KEY }, fetch: f.impl });
+    // Gemini surchargé : un réessai (attente ramenée à 0 ms ici), puis abandon.
+    const f = fakeFetch({ deepseek: [{ status: 503 }], gemini: [{ status: 429 }, { status: 503 }] });
+    const { app } = await buildApp({ env: { DEEPSEEK_API_KEY: DEEPSEEK_KEY, GEMINI_API_KEY: GEMINI_KEY, AI_GEMINI_RETRY_DELAY_MS: "0" }, fetch: f.impl });
     const res = await post(app, { description: DESCRIPTION });
     assert.equal(res.statusCode, 503);
     assert.deepEqual(res.json(), { error: "ai_unavailable" });
@@ -702,6 +703,87 @@ describe("POST /api/simulators/generate", () => {
       f.assertDone();
     });
 
+    it("DeepSeek répond {\"yaml\": \"…\"} avec des guillemets non échappés → valeur récupérée, 200, log « réponse IA réparée » sans contenu", async () => {
+      const raw = '{"yaml": "' + VALID_YAML.replace(/\n/g, "\\n") + '"}';
+      assert.throws(() => JSON.parse(raw));
+      const f = fakeFetch({ deepseek: [deepseekRaw(raw)] });
+      const { app, logs } = await buildApp({ env: { DEEPSEEK_API_KEY: DEEPSEEK_KEY }, fetch: f.impl });
+      const res = await post(app, { description: DESCRIPTION });
+      assert.equal(res.statusCode, 200);
+      assert.equal(res.json().provider, "deepseek");
+      assert.deepEqual(parseYaml(res.json().yaml), SIM);
+      const repaired = logs.filter((l) => l.includes("réponse IA réparée"));
+      assert.equal(repaired.length, 1);
+      const shape = (JSON.parse(repaired[0]) as { shape: Record<string, unknown> }).shape;
+      assert.deepEqual(
+        { rescuedByYamlSlice: shape.rescuedByYamlSlice, repaired: shape.repaired, jsonError: shape.jsonError, hasYamlKey: shape.hasYamlKey, hasRawNewlineInString: shape.hasRawNewlineInString },
+        { rescuedByYamlSlice: true, repaired: false, jsonError: "unexpected_token", hasYamlKey: true, hasRawNewlineInString: false },
+      );
+      const all = logs.join("");
+      assert.ok(!all.includes("paiement-mobile") && !all.includes("checkout") && !all.includes("{{uuid}}") && !all.includes("position"), "aucun contenu dans les logs");
+      assert.equal(f.calls.length, 1);
+      f.assertDone();
+    });
+
+    describe("Gemini surchargé (http_503, http_429) : un réessai après 2 s, dans l'échéance globale", () => {
+      const geminiOnly = (extra: Record<string, string> = {}) => ({ GEMINI_API_KEY: GEMINI_KEY, AI_GEMINI_RETRY_DELAY_MS: "20", ...extra });
+
+      for (const status of [503, 429]) {
+        it(`${status} puis 200 → 200, un seul réessai après l'attente`, async () => {
+          const f = fakeFetch({ gemini: [{ status }, geminiOk(VALID_YAML)] });
+          const { app, logs } = await buildApp({ env: geminiOnly(), fetch: f.impl });
+          const started = Date.now();
+          const res = await post(app, { description: DESCRIPTION });
+          assert.equal(res.statusCode, 200);
+          assert.equal(res.json().provider, "gemini");
+          assert.ok(Date.now() - started >= 15, "attente avant le réessai");
+          assert.equal(f.calls.length, 2);
+          assert.ok(logs.some((l) => l.includes("fournisseur IA surchargé, nouvel essai") && l.includes(`"reason":"http_${status}"`)));
+          f.assertDone();
+        });
+      }
+
+      it("503 deux fois → échec (503 ai_unavailable), pas de troisième appel", async () => {
+        const f = fakeFetch({ gemini: [{ status: 503 }, { status: 503 }] });
+        const { app } = await buildApp({ env: geminiOnly(), fetch: f.impl });
+        const res = await post(app, { description: DESCRIPTION });
+        assert.equal(res.statusCode, 503);
+        assert.deepEqual(res.json(), { error: "ai_unavailable" });
+        assert.equal(f.calls.length, 2);
+        f.assertDone();
+      });
+
+      it("DeepSeek en échec puis Gemini 503 puis 200 → 200 par Gemini", async () => {
+        const f = fakeFetch({ deepseek: [{ status: 500 }], gemini: [{ status: 503 }, geminiOk(VALID_YAML)] });
+        const { app } = await buildApp({ env: geminiOnly({ DEEPSEEK_API_KEY: DEEPSEEK_KEY }), fetch: f.impl });
+        const res = await post(app, { description: DESCRIPTION });
+        assert.equal(res.statusCode, 200);
+        assert.equal(res.json().provider, "gemini");
+        f.assertDone();
+      });
+
+      it("autres erreurs HTTP (500, 400) : pas de réessai", async () => {
+        for (const status of [500, 400]) {
+          const f = fakeFetch({ gemini: [{ status }] });
+          const { app } = await buildApp({ env: geminiOnly(), fetch: f.impl });
+          assert.equal((await post(app, { description: DESCRIPTION })).statusCode, 503);
+          assert.equal(f.calls.length, 1, String(status));
+          f.assertDone();
+        }
+      });
+
+      it("attente par défaut 2 s, interrompue par l'échéance globale → 504 sans réessai", async () => {
+        const f = fakeFetch({ gemini: [{ status: 503 }] });
+        const { app } = await buildApp({ env: { GEMINI_API_KEY: GEMINI_KEY, AI_REQUEST_DEADLINE_MS: "150" }, fetch: f.impl });
+        const started = Date.now();
+        const res = await post(app, { description: DESCRIPTION });
+        assert.equal(res.statusCode, 504);
+        assert.ok(Date.now() - started < 1500, "pas d'attente de 2 s au-delà de l'échéance");
+        assert.equal(f.calls.length, 1);
+        f.assertDone();
+      });
+    });
+
     it("forme inconnue → « unreadable » avec un log de forme sans aucune donnée, puis bascule sur Gemini", async () => {
       const secret = "sk_test_FUITE0123456789 awa@boutique.sn";
       const odd = JSON.stringify({ reponse: `Voici le simulateur ${secret}`, details: { note: secret }, version: 2 });
@@ -719,6 +801,7 @@ describe("POST /api/simulators/generate", () => {
         hasYamlKey: false,
         hasRawNewlineInString: false,
         repaired: false,
+        rescuedByYamlSlice: false,
         fenced: false,
         json: true,
         topType: "object",
