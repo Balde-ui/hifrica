@@ -28,6 +28,9 @@ importers:
       ioredis:
         specifier: ^6.0.0
         version: 6.0.0
+      yaml:
+        specifier: ^2.9.1
+        version: 2.9.1
     devDependencies:
       '@types/node':
         specifier: ^22.18.0

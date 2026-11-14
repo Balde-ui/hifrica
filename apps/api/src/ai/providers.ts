@@ -1,7 +1,9 @@
 // Propriétaire : Dev A
 // Appels aux fournisseurs d'IA par leur API REST (fetch), sans SDK. Les clés ne sont jamais loguées,
-// le contenu des réponses non plus : seulement finish_reason, le nombre de tokens et la taille.
+// le contenu des réponses non plus : seulement finish_reason, le nombre de tokens, la taille et, pour une
+// réponse illisible, sa forme (types, noms de clés : voir extract.ts).
 import type { FastifyBaseLogger } from "fastify";
+import { extractSimulatorYaml, type ExtractionForm, type ResponseShape } from "./extract.js";
 
 export type ProviderName = "deepseek" | "gemini";
 
@@ -14,6 +16,8 @@ export type ProviderLogger = Pick<FastifyBaseLogger, "info" | "warn">;
 
 export interface Provider {
   name: ProviderName;
+  /** Délai d'un appel HTTP (ms), toujours borné en plus par l'échéance globale de la requête. */
+  timeoutMs: number;
   /**
    * Renvoie le YAML extrait de la réponse json {"yaml": "..."} du modèle.
    * Une réponse vide ou illisible est réessayée une fois chez le même fournisseur avant d'échouer.
@@ -66,6 +70,8 @@ export class ProviderError extends Error {
   constructor(
     readonly provider: ProviderName,
     readonly reason: string,
+    /** Réponse illisible : sa forme seulement (aucune valeur reçue). */
+    readonly shape?: ResponseShape,
   ) {
     super(`${provider}: ${reason}`);
     this.name = "ProviderError";
@@ -74,7 +80,9 @@ export class ProviderError extends Error {
 
 export const DEFAULT_DEEPSEEK_MODEL = "deepseek-flash";
 export const DEFAULT_GEMINI_MODEL = "gemini-3.8-flash";
-const TIMEOUT_MS = 30_000;
+/** Délais par appel (incident R3 : Gemini dépassait 30 s). Réglables par AI_DEEPSEEK_TIMEOUT_MS / AI_GEMINI_TIMEOUT_MS. */
+export const DEFAULT_DEEPSEEK_TIMEOUT_MS = 30_000;
+export const DEFAULT_GEMINI_TIMEOUT_MS = 45_000;
 /** DeepSeek : 1 à 384K selon la doc ; 8000 suffit largement pour un simulateur (YAML ≤ 64 Ko). */
 const DEEPSEEK_MAX_TOKENS = 8000;
 /** Gemini : les tokens de réflexion sont pris sur le même budget que la réponse. */
@@ -86,23 +94,25 @@ type Env = Record<string, string | undefined>;
 
 const noopLogger: ProviderLogger = { info: () => undefined, warn: () => undefined };
 
-/** Extrait le champ yaml d'une réponse json du modèle ; lève "unreadable" sinon. */
+/** Délai par appel lu dans l'environnement : entier strictement positif, sinon la valeur par défaut. */
+function timeoutFromEnv(value: string | undefined, fallback: number): number {
+  const parsed = Number(value);
+  return value && Number.isInteger(parsed) && parsed > 0 ? parsed : fallback;
+}
+
+/**
+ * Texte YAML du simulateur dans la réponse du modèle (formes tolérées : voir extract.ts), avec la forme
+ * reconnue ; lève ProviderError "unreadable" (avec la forme de la réponse, sans contenu) sinon.
+ */
+export function readCompletion(provider: ProviderName, text: string | undefined | null): { yaml: string; form: ExtractionForm } {
+  const result = extractSimulatorYaml(text);
+  if (!result.ok) throw new ProviderError(provider, "unreadable", result.shape);
+  return { yaml: result.yaml, form: result.form };
+}
+
+/** Texte YAML du simulateur ; lève "unreadable" sinon. */
 export function extractYaml(provider: ProviderName, text: string | undefined | null): string {
-  if (typeof text !== "string" || text.trim() === "") throw new ProviderError(provider, "unreadable");
-  // Certains modèles entourent malgré tout le json d'un bloc ```json ... ```.
-  const cleaned = text.trim().replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, "");
-  let data: unknown;
-  try {
-    data = JSON.parse(cleaned);
-  } catch {
-    throw new ProviderError(provider, "unreadable");
-  }
-  if (!data || typeof data !== "object" || typeof (data as { yaml?: unknown }).yaml !== "string") {
-    throw new ProviderError(provider, "unreadable");
-  }
-  const yaml = (data as { yaml: string }).yaml;
-  if (yaml.trim() === "") throw new ProviderError(provider, "unreadable");
-  return yaml;
+  return readCompletion(provider, text).yaml;
 }
 
 async function postJson(
@@ -112,11 +122,12 @@ async function postJson(
   headers: Record<string, string>,
   body: unknown,
   ctx: CallContext,
+  timeoutMs: number,
 ): Promise<unknown> {
   if (ctx.signal.aborted) throw abortReason(ctx.signal);
   if (!ctx.take()) throw new GenerationAbortedError("call_limit");
-  // Timeout de 30 s par appel, combiné à l'annulation de la requête (déconnexion, échéance globale).
-  const signal = AbortSignal.any([ctx.signal, AbortSignal.timeout(TIMEOUT_MS)]);
+  // Délai par appel (propre au fournisseur), combiné à l'annulation de la requête (déconnexion, échéance globale).
+  const signal = AbortSignal.any([ctx.signal, AbortSignal.timeout(timeoutMs)]);
   let res: Response;
   try {
     res = await fetchImpl(url, {
@@ -171,8 +182,13 @@ async function completeWithRetry(
     const empty = typeof raw.text !== "string" || raw.text.trim() === "";
     log.info({ provider, call: n, ...raw.meta, empty, contentLength: raw.text?.length ?? 0 }, "appel IA");
     try {
-      return extractYaml(provider, raw.text);
+      const { yaml, form } = readCompletion(provider, raw.text);
+      if (form !== "json_yaml_string") log.info({ provider, call: n, form }, "réponse IA lue sous une forme non standard");
+      return yaml;
     } catch (err) {
+      // Diagnostic sans fuite : la forme de la réponse (types, noms de clés), jamais son contenu.
+      const shape = err instanceof ProviderError && !empty ? err.shape : undefined;
+      if (shape) log.warn({ provider, call: n, shape }, "réponse IA illisible : forme reçue");
       if (n === CALLS_PER_COMPLETION) throw err;
       log.warn({ provider, call: n, reason: empty ? "empty" : "unreadable" }, "réponse IA vide ou illisible, nouvel essai");
     }
@@ -189,9 +205,10 @@ interface DeepSeekResponse {
   };
 }
 
-function deepseek(apiKey: string, model: string, fetchImpl: typeof fetch): Provider {
+function deepseek(apiKey: string, model: string, fetchImpl: typeof fetch, timeoutMs: number): Provider {
   return {
     name: "deepseek",
+    timeoutMs,
     complete(system, messages, log = noopLogger, ctx = unlimitedContext) {
       const body = {
         model,
@@ -208,7 +225,7 @@ function deepseek(apiKey: string, model: string, fetchImpl: typeof fetch): Provi
         async () => {
           const data = (await postJson("deepseek", fetchImpl, "https://api.deepseek.com/chat/completions", {
             Authorization: `Bearer ${apiKey}`,
-          }, body, ctx)) as DeepSeekResponse | null;
+          }, body, ctx, timeoutMs)) as DeepSeekResponse | null;
           const choice = data?.choices?.[0];
           return {
             text: choice?.message?.content ?? undefined,
@@ -237,12 +254,13 @@ interface GeminiResponse {
   };
 }
 
-function gemini(apiKey: string, model: string, fetchImpl: typeof fetch): Provider {
+function gemini(apiKey: string, model: string, fetchImpl: typeof fetch, timeoutMs: number): Provider {
   // thinkingLevel n'existe qu'à partir de Gemini 3 (erreur sur les modèles 2.x).
   const thinkingConfig = /^gemini-([3-9]|\d{2,})/.test(model) ? { thinkingConfig: { thinkingLevel: "low" } } : {};
   const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`;
   return {
     name: "gemini",
+    timeoutMs,
     complete(system, messages, log = noopLogger, ctx = unlimitedContext) {
       const body = {
         systemInstruction: { parts: [{ text: system }] },
@@ -257,7 +275,7 @@ function gemini(apiKey: string, model: string, fetchImpl: typeof fetch): Provide
       return completeWithRetry(
         "gemini",
         async () => {
-          const data = (await postJson("gemini", fetchImpl, url, { "x-goog-api-key": apiKey }, body, ctx)) as GeminiResponse | null;
+          const data = (await postJson("gemini", fetchImpl, url, { "x-goog-api-key": apiKey }, body, ctx, timeoutMs)) as GeminiResponse | null;
           const candidate = data?.candidates?.[0];
           const parts = candidate?.content?.parts;
           const text = parts?.filter((p) => !p.thought && typeof p.text === "string").map((p) => p.text).join("");
@@ -283,10 +301,12 @@ function gemini(apiKey: string, model: string, fetchImpl: typeof fetch): Provide
 export function createProviders(env: Env = process.env, fetchImpl: typeof fetch = fetch): Provider[] {
   const providers: Provider[] = [];
   if (env.DEEPSEEK_API_KEY) {
-    providers.push(deepseek(env.DEEPSEEK_API_KEY, env.DEEPSEEK_MODEL || DEFAULT_DEEPSEEK_MODEL, fetchImpl));
+    const timeoutMs = timeoutFromEnv(env.AI_DEEPSEEK_TIMEOUT_MS, DEFAULT_DEEPSEEK_TIMEOUT_MS);
+    providers.push(deepseek(env.DEEPSEEK_API_KEY, env.DEEPSEEK_MODEL || DEFAULT_DEEPSEEK_MODEL, fetchImpl, timeoutMs));
   }
   if (env.GEMINI_API_KEY) {
-    providers.push(gemini(env.GEMINI_API_KEY, env.GEMINI_MODEL || DEFAULT_GEMINI_MODEL, fetchImpl));
+    const timeoutMs = timeoutFromEnv(env.AI_GEMINI_TIMEOUT_MS, DEFAULT_GEMINI_TIMEOUT_MS);
+    providers.push(gemini(env.GEMINI_API_KEY, env.GEMINI_MODEL || DEFAULT_GEMINI_MODEL, fetchImpl, timeoutMs));
   }
   return providers;
 }

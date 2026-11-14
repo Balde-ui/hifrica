@@ -5,8 +5,9 @@ import { Writable } from "node:stream";
 import { randomUUID } from "node:crypto";
 import { describe, it } from "node:test";
 import Fastify from "fastify";
+import { parse as parseYaml } from "yaml";
 import { loadExampleYaml } from "./prompt.js";
-import { MAX_CALLS_PER_REQUEST } from "./providers.js";
+import { createProviders, MAX_CALLS_PER_REQUEST } from "./providers.js";
 import { AiQuota, MemoryStore } from "./quota.js";
 import { aiRoutes, DEFAULT_DEADLINE_MS, type AiRoutesDeps, type AiRoutesOptions } from "./routes.js";
 
@@ -645,6 +646,98 @@ describe("POST /api/simulators/generate", () => {
       const { app } = await buildApp({ env: { DEEPSEEK_API_KEY: DEEPSEEK_KEY, AI_GENERATION_ENABLED: "false" }, fetch: fakeFetch({}).impl, quota: new AiQuota({ store }) });
       assert.equal((await post(app, { description: DESCRIPTION })).statusCode, 503);
       assert.equal(store.incrCalls, 0);
+    });
+  });
+
+  describe("incident R3 : réponses lisibles sous d'autres formes, diagnostic, délais par fournisseur", () => {
+    const SIM = parseYaml(VALID_YAML) as Record<string, unknown>;
+    const deepseekRaw = (content: string): Reply => ({
+      status: 200,
+      body: { choices: [{ message: { role: "assistant", content }, finish_reason: "stop" }], usage: { prompt_tokens: 10, completion_tokens: 900 } },
+    });
+
+    for (const [label, content] of [
+      ['{"yaml": {<objet>}}', JSON.stringify({ yaml: SIM })],
+      ['{"simulator": "<texte>"}', JSON.stringify({ simulator: VALID_YAML })],
+      ["le simulateur directement", JSON.stringify(SIM)],
+      ["```json … ```", "```json\n" + JSON.stringify({ yaml: VALID_YAML }) + "\n```"],
+      ["YAML brut", VALID_YAML],
+    ] as [string, string][]) {
+      it(`DeepSeek répond ${label} → 200 dès le 1er appel, forme journalisée`, async () => {
+        const f = fakeFetch({ deepseek: [deepseekRaw(content)] });
+        const { app, logs } = await buildApp({ env: { DEEPSEEK_API_KEY: DEEPSEEK_KEY }, fetch: f.impl });
+        const res = await post(app, { description: DESCRIPTION });
+        assert.equal(res.statusCode, 200);
+        assert.equal(res.json().valid, true);
+        assert.deepEqual(parseYaml(res.json().yaml), SIM);
+        if (label !== "```json … ```") assert.ok(logs.some((l) => l.includes("réponse IA lue sous une forme non standard")));
+        f.assertDone();
+      });
+    }
+
+    it("forme inconnue → « unreadable » avec un log de forme sans aucune donnée, puis bascule sur Gemini", async () => {
+      const secret = "sk_test_FUITE0123456789 awa@boutique.sn";
+      const odd = JSON.stringify({ reponse: `Voici le simulateur ${secret}`, details: { note: secret }, version: 2 });
+      const f = fakeFetch({ deepseek: [deepseekRaw(odd), deepseekRaw(odd)], gemini: [geminiOk(VALID_YAML)] });
+      const { app, logs } = await buildApp({ env: { DEEPSEEK_API_KEY: DEEPSEEK_KEY, GEMINI_API_KEY: GEMINI_KEY }, fetch: f.impl });
+      const res = await post(app, { description: DESCRIPTION });
+      assert.equal(res.statusCode, 200);
+      assert.equal(res.json().provider, "gemini");
+      const shapes = logs.filter((l) => l.includes("réponse IA illisible : forme reçue"));
+      assert.equal(shapes.length, 2, "une forme par appel illisible");
+      const shape = (JSON.parse(shapes[0]) as { shape: Record<string, unknown> }).shape;
+      assert.deepEqual(shape, { length: odd.length, fenced: false, json: true, topType: "object", keys: ["reponse", "details", "version"], valueTypes: ["string", "object", "number"] });
+      const all = logs.join("");
+      assert.ok(!all.includes("FUITE") && !all.includes("awa@boutique.sn") && !all.includes("Voici le simulateur"), "aucun contenu dans les logs");
+      assert.ok(logs.some((l) => l.includes('"reason":"unreadable"') && l.includes("fournisseur IA en échec")));
+      f.assertDone();
+    });
+
+    it("délais par défaut : 30 s pour DeepSeek, 45 s pour Gemini ; AI_*_TIMEOUT_MS invalide ignoré", () => {
+      const keys = { DEEPSEEK_API_KEY: DEEPSEEK_KEY, GEMINI_API_KEY: GEMINI_KEY };
+      assert.deepEqual(createProviders(keys).map((p) => [p.name, p.timeoutMs]), [["deepseek", 30_000], ["gemini", 45_000]]);
+      assert.deepEqual(
+        createProviders({ ...keys, AI_DEEPSEEK_TIMEOUT_MS: "20000", AI_GEMINI_TIMEOUT_MS: "60000" }).map((p) => p.timeoutMs),
+        [20_000, 60_000],
+      );
+      for (const bad of ["", "0", "-5", "abc", "1.5"]) {
+        assert.deepEqual(createProviders({ ...keys, AI_DEEPSEEK_TIMEOUT_MS: bad, AI_GEMINI_TIMEOUT_MS: bad }).map((p) => p.timeoutMs), [30_000, 45_000], bad);
+      }
+    });
+
+    it("délai par appel respecté pour chaque fournisseur (AI_DEEPSEEK_TIMEOUT_MS, AI_GEMINI_TIMEOUT_MS)", async () => {
+      const aborts: { provider: string; afterMs: number }[] = [];
+      const impl: typeof fetch = async (input, init) => {
+        const provider = String(input).startsWith("https://api.deepseek.com/") ? "deepseek" : "gemini";
+        const started = Date.now();
+        return new Promise<Response>((_resolve, reject) => {
+          init?.signal?.addEventListener("abort", () => {
+            aborts.push({ provider, afterMs: Date.now() - started });
+            reject(init.signal?.reason);
+          }, { once: true });
+        });
+      };
+      const { app, logs } = await buildApp({
+        env: { DEEPSEEK_API_KEY: DEEPSEEK_KEY, GEMINI_API_KEY: GEMINI_KEY, AI_DEEPSEEK_TIMEOUT_MS: "60", AI_GEMINI_TIMEOUT_MS: "300" },
+        fetch: impl,
+      });
+      const res = await post(app, { description: DESCRIPTION });
+      assert.equal(res.statusCode, 503);
+      assert.deepEqual(res.json(), { error: "ai_unavailable" });
+      assert.deepEqual(aborts.map((a) => a.provider), ["deepseek", "gemini"], "un seul appel chacun (pas de réessai sur timeout)");
+      assert.ok(aborts[0].afterMs >= 50 && aborts[0].afterMs < 250, `DeepSeek coupé à ${aborts[0].afterMs} ms`);
+      assert.ok(aborts[1].afterMs >= 280 && aborts[1].afterMs < 1_000, `Gemini coupé à ${aborts[1].afterMs} ms`);
+      assert.equal(logs.filter((l) => l.includes('"reason":"timeout"')).length, 2);
+    });
+
+    it("le délai par appel reste borné par l'échéance globale (AI_REQUEST_DEADLINE_MS)", async () => {
+      const f = fakeFetch({ gemini: [{ hang: true }] });
+      const { app } = await buildApp({ env: { GEMINI_API_KEY: GEMINI_KEY, AI_GEMINI_TIMEOUT_MS: "60000", AI_REQUEST_DEADLINE_MS: "150" }, fetch: f.impl });
+      const started = Date.now();
+      const res = await post(app, { description: DESCRIPTION });
+      assert.equal(res.statusCode, 504);
+      assert.ok(Date.now() - started < 2_000);
+      assert.deepEqual(f.aborted, ["gemini"]);
     });
   });
 
