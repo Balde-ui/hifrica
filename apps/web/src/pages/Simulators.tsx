@@ -1,10 +1,10 @@
 // Simulateurs utilisés par le projet actif : scénario d'échec actif par simulateur.
 import { useCallback, useEffect, useState } from "react";
-import { api, errorMessage, isExecutable, type ProjectDetail, type SimulatorSummary } from "../api.js";
+import { api, errorMessage, isExecutable, rankSimulators, type ProjectDetail, type SimulatorSummary } from "../api.js";
 import { useProjects } from "../projects.js";
 import { Link } from "../router.js";
 import { PageHead } from "../shell.js";
-import { Alert, Empty, Icon, Skeleton, SimulatorBadges, Spinner, useToast } from "../ui.js";
+import { Alert, Empty, Icon, OnlineBadge, Skeleton, SimulatorBadges, Spinner, useToast } from "../ui.js";
 
 export function SimulatorsPage() {
   const { active } = useProjects();
@@ -25,7 +25,7 @@ export function SimulatorsPage() {
     setScenarios(null);
     load();
     api<{ simulators: SimulatorSummary[] }>("/api/simulators")
-      .then((r) => setCatalog([...r.simulators].sort((a, b) => Number(isExecutable(b)) - Number(isExecutable(a)))))
+      .then((r) => setCatalog(rankSimulators(r.simulators)))
       .catch((err) => setError(errorMessage(err)));
   }, [load]);
 
@@ -66,7 +66,7 @@ export function SimulatorsPage() {
         </div>
       ) : (
         <div className="stack">
-          <div className="section-title">En ligne · servis par le moteur</div>
+          <div className="section-title">En ligne · exécutés par le moteur avec votre clé de test</div>
           {catalog.filter(isExecutable).map((s) => {
             const current = scenarios[s.slug] ?? null;
             const options: (string | null)[] = [null, ...s.scenarios];
@@ -83,9 +83,13 @@ export function SimulatorsPage() {
                           {s.slug}
                         </Link>
                         <span className="badge">v{s.version}</span>
+                        <OnlineBadge />
                         <SimulatorBadges status={s.status} origin={s.origin} />
                       </div>
                       <div className="small muted">{s.description}</div>
+                      {s.status !== "verified" && (
+                        <div className="xs muted" style={{ marginTop: "0.2rem" }}>Non vérifié par l'équipe Hifrica : relisez son YAML avant de vous y fier.</div>
+                      )}
                     </div>
                   </div>
                   {current ? <span className="badge badge-warn"><span className="dot" /> {current}</span> : <span className="badge badge-ok"><span className="dot" /> Nominal</span>}
@@ -120,9 +124,10 @@ export function SimulatorsPage() {
             <div className="panel">
               <div className="panel-head">
                 <div>
-                  <h2>Publiés par la communauté</h2>
+                  <h2>Non exécutables</h2>
                   <p className="small muted" style={{ marginTop: "0.2rem" }}>
-                    Documentés dans le catalogue, pas encore exécutés par le moteur : leurs scénarios seront réglables ici dès leur mise en ligne.
+                    Leur version courante ne passe plus la validation du schéma ou n'est plus exécutable : le moteur répond 404. Leur documentation reste
+                    consultable ; publiez une version corrigée depuis l'éditeur.
                   </p>
                 </div>
                 <span className="badge">{catalog.filter((s) => !isExecutable(s)).length}</span>

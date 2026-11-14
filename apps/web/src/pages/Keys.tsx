@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState, type FormEvent } from "react";
-import { api, errorMessage, isExecutable, rememberKey, rememberedKey, type ApiKeyView, type ProjectDetail, type SimulatorSummary } from "../api.js";
+import { api, errorMessage, isExecutable, rankSimulators, rememberKey, rememberedKey, type ApiKeyView, type ProjectDetail, type SimulatorSummary } from "../api.js";
 import { useProjects } from "../projects.js";
 import { useRouter } from "../router.js";
 import { useSession } from "../session.js";
@@ -31,7 +31,8 @@ export function KeysPage() {
     setKeys(null);
     load();
     api<{ simulators: SimulatorSummary[] }>("/api/simulators?kind=http")
-      .then((r) => setSim(r.simulators.find((s) => isExecutable(s) && s.endpoints.some((e) => e.method === "POST")) ?? null))
+      // paiement-mobile-generique d'abord, puis un vérifié, puis tout simulateur exécuté qui accepte un POST.
+      .then((r) => setSim(rankSimulators(r.simulators).find((s) => isExecutable(s) && s.endpoints.some((e) => e.method === "POST")) ?? null))
       .catch(() => setSim(null));
   }, [load]);
 

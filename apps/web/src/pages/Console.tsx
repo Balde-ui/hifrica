@@ -1,6 +1,6 @@
 // Console développeur : journal réel (request_logs), filtres, détail latéral, envoi de requêtes de test.
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react";
-import { api, errorMessage, isExecutable, rememberKey, rememberedKey, type LogEntry, type SendResult, type SimulatorSummary } from "../api.js";
+import { api, errorMessage, isExecutable, rankSimulators, rememberKey, rememberedKey, type LogEntry, type SendResult, type SimulatorSummary } from "../api.js";
 import { useProjects } from "../projects.js";
 import { Link } from "../router.js";
 import { PageHead } from "../shell.js";
@@ -264,9 +264,8 @@ function LogDetail({ log, onClose }: { log: LogEntry; onClose: () => void }) {
 }
 
 function SendDrawer({ projectId, catalog, onClose, onSent }: { projectId: string; catalog: SimulatorSummary[]; onClose: () => void; onSent: () => void }) {
-  const http = catalog
-    .filter((s) => s.kind === "http" && s.endpoints.length > 0)
-    .sort((a, b) => Number(isExecutable(b)) - Number(isExecutable(a)));
+  // Exécutés d'abord, paiement-mobile-generique en tête : c'est lui qui est sélectionné par défaut.
+  const http = rankSimulators(catalog.filter((s) => s.kind === "http" && s.endpoints.length > 0));
   const [key, setKey] = useState(() => rememberedKey(projectId));
   const [showKey, setShowKey] = useState(false);
   const [slug, setSlug] = useState("");
@@ -352,7 +351,7 @@ function SendDrawer({ projectId, catalog, onClose, onSent }: { projectId: string
               <label className="label" htmlFor="csim">Simulateur</label>
               <select id="csim" className="input" value={slug} onChange={(e) => selectSimulator(e.target.value)}>
                 {http.map((s) => (
-                  <option key={s.slug} value={s.slug}>{s.slug}{isExecutable(s) ? "" : " (pas encore exécuté)"}</option>
+                  <option key={s.slug} value={s.slug}>{s.slug}{isExecutable(s) ? "" : " (non exécutable)"}</option>
                 ))}
               </select>
             </div>
@@ -367,8 +366,12 @@ function SendDrawer({ projectId, catalog, onClose, onSent }: { projectId: string
           </div>
           {sim && !isExecutable(sim) && (
             <Alert kind="warn">
-              Ce simulateur est publié dans le catalogue mais pas encore exécuté par le moteur (chargement des simulateurs publiés : évolution du moteur à venir). Il répondra 404.
+              Le moteur n'exécute pas ce simulateur : sa version courante n'est plus exécutable (YAML invalide ou simulateur retiré). L'appel recevra une
+              réponse 404 ; publiez une version corrigée depuis l'éditeur.
             </Alert>
+          )}
+          {sim && isExecutable(sim) && sim.status !== "verified" && (
+            <p className="hint">Simulateur communautaire exécuté par le moteur, non vérifié par l'équipe Hifrica.</p>
           )}
           <div className="field">
             <label className="label" htmlFor="cpath">Requête</label>

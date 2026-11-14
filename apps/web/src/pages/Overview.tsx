@@ -7,11 +7,11 @@
 // l'historique avant le début d'une période, la période est dite PARTIELLE : les totaux sont affichés comme des
 // minimums (« 500+ »), un bandeau l'explique et les créneaux non chargés sont hachurés, jamais montrés à zéro.
 import { useEffect, useMemo, useState, type CSSProperties } from "react";
-import { api, errorMessage, isExecutable, type LogEntry, type ProjectDetail, type SimulatorSummary } from "../api.js";
+import { api, errorMessage, isExecutable, rankSimulators, type LogEntry, type ProjectDetail, type SimulatorSummary } from "../api.js";
 import { useProjects } from "../projects.js";
 import { Link } from "../router.js";
 import { useSession } from "../session.js";
-import { Alert, CopyButton, Empty, Icon, Method, Modal, Skeleton, StatusCode, formatDate, timeAgo } from "../ui.js";
+import { Alert, CopyButton, Empty, Icon, Method, Modal, OnlineBadge, Skeleton, StatusCode, formatDate, timeAgo } from "../ui.js";
 
 /** Taille de page maximale de GET /api/projects/:id/logs. */
 const PAGE = 100;
@@ -360,7 +360,7 @@ export function Overview() {
 
   useEffect(() => {
     api<{ simulators: SimulatorSummary[] }>("/api/simulators")
-      .then((r) => setCatalog([...r.simulators].sort((a, b) => Number(isExecutable(b)) - Number(isExecutable(a)))))
+      .then((r) => setCatalog(rankSimulators(r.simulators)))
       .catch(() => setCatalog([]));
   }, []);
 
@@ -772,7 +772,7 @@ export function Overview() {
                       <Icon name="layers" size={15} />
                       <span className="mono small truncate">{s.slug}</span>
                     </span>
-                    {isExecutable(s) ? <span className="badge badge-ok">En ligne</span> : <span className="xs muted">publié</span>}
+                    {isExecutable(s) ? <OnlineBadge /> : <span className="xs muted">non exécutable</span>}
                   </Link>
                 ))
               )}

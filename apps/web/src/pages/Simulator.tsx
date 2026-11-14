@@ -4,10 +4,18 @@ import { parse } from "yaml";
 import { api, errorMessage, isExecutable, type SimulatorSummary } from "../api.js";
 import { Link } from "../router.js";
 import { useSession } from "../session.js";
-import { Alert, CodeBlock, Icon, JsonView, Method, Skeleton, SimulatorBadges } from "../ui.js";
+import { Alert, CodeBlock, Icon, JsonView, Method, OnlineBadge, Skeleton, SimulatorBadges } from "../ui.js";
 
 interface FullSimulator extends SimulatorSummary {
   yaml: string;
+}
+
+/** Explication exacte, d'après les conditions du moteur (#28), quand `executable` est faux. */
+function notExecutableReason(sim: FullSimulator): string {
+  if (sim.status === "unpublished") return "Simulateur retiré du catalogue : le moteur ne l'exécute plus (réponse 404). Sa documentation reste consultable.";
+  if (sim.endpoints.length === 0 && sim.menus === 0)
+    return "La version courante de ce simulateur ne passe plus la validation du schéma : le moteur ne l'exécute pas (réponse 404). Publiez une version corrigée.";
+  return "Le moteur n'exécute pas ce simulateur (réponse 404) : sa version courante n'est pas exécutable. Publiez une nouvelle version depuis l'éditeur.";
 }
 
 interface Doc {
@@ -39,7 +47,17 @@ export function SimulatorPage({ slug }: { slug: string }) {
 
   const doc = useMemo<Doc>(() => {
     try {
-      return (sim ? parse(sim.yaml) : {}) as Doc;
+      const raw = (sim ? parse(sim.yaml) : {}) as Doc | null;
+      if (!raw || typeof raw !== "object") return {};
+      // Un YAML qui ne passe plus le schéma (simulateur non exécutable) peut avoir n'importe quelle forme :
+      // on ne garde que des sections bien typées, pour afficher la page sans planter.
+      const isObj = (v: unknown) => typeof v === "object" && v !== null && !Array.isArray(v);
+      return {
+        ...raw,
+        endpoints: Array.isArray(raw.endpoints) ? raw.endpoints.filter((e) => isObj(e) && typeof e.path === "string" && typeof e.method === "string") : undefined,
+        scenarios: isObj(raw.scenarios) ? raw.scenarios : undefined,
+        menus: isObj(raw.menus) ? raw.menus : undefined,
+      };
     } catch {
       return {};
     }
@@ -68,6 +86,7 @@ export function SimulatorPage({ slug }: { slug: string }) {
           <div className="row" style={{ marginBottom: "0.5rem" }}>
             <span className="badge badge-info">{sim.kind === "ussd" ? `USSD ${sim.code ?? ""}` : "API HTTP"}</span>
             <span className="badge">v{sim.version}</span>
+            {isExecutable(sim) && <OnlineBadge />}
             <SimulatorBadges status={sim.status} origin={sim.origin} />
           </div>
           <h1 className="mono" style={{ fontSize: "1.35rem", wordBreak: "break-all" }}>
@@ -90,14 +109,18 @@ export function SimulatorPage({ slug }: { slug: string }) {
         </div>
       </div>
 
-      {!isExecutable(sim) && (
+      {!isExecutable(sim) ? (
+        <div style={{ marginBottom: "1rem" }}>
+          <Alert kind="warn">{notExecutableReason(sim)}</Alert>
+        </div>
+      ) : sim.status !== "verified" ? (
         <div style={{ marginBottom: "1rem" }}>
           <Alert kind="info">
-            Simulateur publié par la communauté : sa documentation est disponible, mais il n'est pas encore exécuté par le moteur (chargement des
-            simulateurs publiés : évolution du moteur à venir). Les simulateurs officiels marqués « Vérifié » sont utilisables dès maintenant.
+            Simulateur communautaire en ligne : le moteur l'exécute avec votre clé de test, mais il n'a pas été vérifié par l'équipe Hifrica.
+            Relisez son YAML avant de vous y fier.
           </Alert>
         </div>
-      )}
+      ) : null}
       <div className="segmented" style={{ marginBottom: "1rem" }} role="tablist">
         <button role="tab" aria-selected={tab === "doc"} className={tab === "doc" ? "on" : ""} onClick={() => setTab("doc")}>
           Documentation

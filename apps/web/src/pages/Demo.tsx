@@ -9,6 +9,7 @@ import { useProjects } from "../projects.js";
 import { Link } from "../router.js";
 import { PageHead } from "../shell.js";
 import { Alert, Empty, Icon, JsonView, Skeleton, Spinner, StatusCode, useToast } from "../ui.js";
+import { DemoWebhookReceiver } from "../components/DemoWebhookReceiver.js";
 
 const SIMULATOR = "paiement-mobile-generique";
 const SCENARIO = "solde-insuffisant";
@@ -262,6 +263,14 @@ export function DemoShop() {
                     <div style={{ marginTop: "0.2rem" }}>{outcome.text}</div>
                   </div>
                 )}
+                {active && detail && (
+                  <DemoWebhookReceiver
+                    projectId={active.id}
+                    webhookUrl={detail.project.webhookUrl}
+                    paymentId={checkoutId(result)}
+                    onWebhookUrl={(url) => setDetail((d) => (d ? { ...d, project: { ...d.project, webhookUrl: url } } : d))}
+                  />
+                )}
                 <p style={{ fontSize: "0.72rem", color: "#8a8f96", marginTop: "0.8rem" }}>
                   Démo : avec « Solde insuffisant », les paniers de plus de 500 000 FCFA sont refusés (ajoutez le groupe électrogène).
                 </p>
@@ -302,12 +311,12 @@ export function DemoShop() {
 function interpret(r: SendResult): { cls: string; title: string; text: string } {
   const body = (r.body ?? {}) as { status?: string; error?: string };
   if (r.status === 201 || r.status === 200) {
-    // Honnête tant que la réception du webhook par la boutique (A5, C6) n'est pas branchée : on n'annonce
-    // que ce qui s'est réellement passé, une demande acceptée qui attend la validation du client.
+    // On n'annonce que ce qui s'est réellement passé : une demande acceptée qui attend la validation du
+    // client. La confirmation finale n'est affichée qu'à réception du webhook signé (DemoWebhookReceiver, C6).
     return {
       cls: "pay-pending",
       title: "En attente de confirmation du client",
-      text: `Le simulateur a accepté la demande (statut « ${body.status ?? "pending"} »). Le client doit maintenant valider le paiement sur son téléphone. Cette démo n'affiche pas encore la confirmation finale ni le webhook reçu par la boutique.`,
+      text: `Le simulateur a accepté la demande (statut « ${body.status ?? "pending"} »). Le client doit maintenant valider le paiement sur son téléphone ; la boutique le considère payé seulement à réception du webhook signé.`,
     };
   }
   if (r.status === 402) {
@@ -315,4 +324,11 @@ function interpret(r: SendResult): { cls: string; title: string; text: string } 
   }
   if (r.status === 401) return { cls: "pay-err", title: "Clé refusée", text: "La clé de test est invalide ou révoquée." };
   return { cls: "pay-err", title: `Erreur ${r.status}`, text: body.error ?? "Réponse inattendue du simulateur." };
+}
+
+/** Identifiant du checkout accepté (réponse 201), comparé ensuite au data.id du webhook signé. */
+function checkoutId(r: SendResult | null): string | null {
+  if (!r || r.status !== 201) return null;
+  const id = (r.body as { id?: unknown } | null)?.id;
+  return typeof id === "string" && id.length > 0 ? id : null;
 }
