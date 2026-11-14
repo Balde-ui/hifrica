@@ -3,6 +3,7 @@
 // visible ensuite dans la console. Présentée dans un cadre de navigateur : c'est l'app d'un développeur.
 import { useEffect, useMemo, useRef, useState } from "react";
 import { api, errorMessage, rememberKey, rememberedKey, type ProjectDetail, type SendResult } from "../api.js";
+import { DeviceFrame } from "../components/DeviceFrame.js";
 import { SimulatedPhone } from "../phone/SimulatedPhone.js";
 import { useProjects } from "../projects.js";
 import { Link } from "../router.js";
@@ -270,7 +271,12 @@ export function DemoShop() {
         </div>
 
         {active && (
-          <SimulatedPhone projectId={active.id} testKey={key.trim()} ussdSimulator={USSD_SIMULATOR} ussdCode={USSD_CODE} />
+          // Cadre de smartphone (C) autour du téléphone simulé de B, inchangé : même flux SSE, mêmes actions.
+          <div className="device-col">
+            <DeviceFrame>
+              <SimulatedPhone projectId={active.id} testKey={key.trim()} ussdSimulator={USSD_SIMULATOR} ussdCode={USSD_CODE} />
+            </DeviceFrame>
+          </div>
         )}
       </div>
 
