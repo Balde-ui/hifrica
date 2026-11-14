@@ -1,21 +1,34 @@
 // Propriétaire : Dev A
 // POST /api/simulators/generate : génère un simulateur YAML à partir d'une description en français.
-// Logs : provider, attempts, durée, statut uniquement. JAMAIS la description, le YAML ni les clés.
+// Réservé aux utilisateurs connectés. Ordre des contrôles : session (401) → interrupteur (503) →
+// quota du compte → quota de l'IP → plafond global (429) → appel IA.
+// Logs : provider, attempts, durée, statut, id du compte uniquement. JAMAIS la description, le YAML,
+// les clés ni l'email du compte.
 //
 // Variables d'environnement :
 //   AI_GENERATION_ENABLED   activé seulement si "true", "1" ou "yes" (casse et espaces ignorés) ; absente ou
 //                           toute autre valeur = désactivé (503 ai_disabled, aucun appel IA)
+//   AI_USER_DAILY_LIMIT     générations par compte et par jour UTC ; défaut 20
 //   AI_DAILY_LIMIT          plafond global de générations par jour UTC ; défaut 100
 //   AI_REQUEST_DEADLINE_MS  échéance globale d'une requête ; défaut 90000 (504 ai_timeout au-delà)
 //   VALKEY_URL              compteurs de quota persistants (sinon en mémoire)
-import type { FastifyPluginAsync } from "fastify";
+import type { FastifyPluginAsync, FastifyRequest } from "fastify";
+import { requireUser, type AuthenticatedUser } from "../auth.js";
 import { AiUnavailableError, generateSimulator } from "./generate.js";
 import { maskSensitive } from "./mask.js";
 import { buildSystemPrompt, buildUserPrompt, loadExampleYaml, type SimulatorKind } from "./prompt.js";
 import { createCallContext, createProviders, GenerationAbortedError } from "./providers.js";
 import { createQuotaFromEnv, type AiQuota } from "./quota.js";
 
+/** Dépendances remplaçables dans les tests (même principe que PhoneActionDeps), sans Better Auth. */
+export interface AiRoutesDeps {
+  requireUser: (req: FastifyRequest) => Promise<AuthenticatedUser | null>;
+}
+
+const defaultDeps: AiRoutesDeps = { requireUser };
+
 export interface AiRoutesOptions {
+  deps?: AiRoutesDeps;
   /** Variables d'environnement (par défaut process.env) ; injectables pour les tests. */
   env?: Record<string, string | undefined>;
   fetch?: typeof fetch;
@@ -52,6 +65,7 @@ function parseBody(body: unknown): ParsedBody {
 
 export const aiRoutes: FastifyPluginAsync<AiRoutesOptions> = async (app, opts) => {
   const env = opts.env ?? process.env;
+  const deps = opts.deps ?? defaultDeps;
   const enabled = isGenerationEnabled(env.AI_GENERATION_ENABLED);
   app.log.info(enabled ? "Assistant IA : activé" : "Assistant IA : désactivé (AI_GENERATION_ENABLED)");
   const deadlineValue = Number(env.AI_REQUEST_DEADLINE_MS);
@@ -64,12 +78,28 @@ export const aiRoutes: FastifyPluginAsync<AiRoutesOptions> = async (app, opts) =
   if (!example) app.log.warn("Assistant IA : exemple de simulateur introuvable, prompt sans exemple");
   const system = buildSystemPrompt(example);
   app.log.info(
-    { providers: providers.map((p) => p.name), enabled, dailyLimit: quota.dailyLimit, deadlineMs },
+    { providers: providers.map((p) => p.name), enabled, dailyLimit: quota.dailyLimit, userDailyLimit: quota.userDailyLimit, deadlineMs },
     "Assistant IA : configuration",
   );
 
   app.post("/api/simulators/generate", async (req, reply) => {
     const started = Date.now();
+
+    // 1. Session, avant tout le reste : sans compte, ni quota consommé ni appel IA.
+    let user: AuthenticatedUser | null;
+    try {
+      user = await deps.requireUser(req);
+    } catch {
+      // Pas de détail d'erreur dans les logs : une erreur de base pourrait transporter des données du compte.
+      req.log.error({ status: 503 }, "génération IA : vérification de la session impossible");
+      return reply.code(503).send({ error: "auth_unavailable" });
+    }
+    if (!user) {
+      req.log.info({ status: 401 }, "génération IA refusée : pas de session");
+      return reply.code(401).send({ error: "auth_required" });
+    }
+    const userId = user.id; // seul identifiant du compte écrit dans les logs (jamais l'email)
+
     const body = parseBody(req.body);
     if (!body.ok) return reply.code(400).send({ error: "invalid_body", message: body.message });
 
@@ -83,9 +113,9 @@ export const aiRoutes: FastifyPluginAsync<AiRoutesOptions> = async (app, opts) =
     }
 
     // req.ip tient compte de X-Forwarded-For grâce à trustProxy (Caddy est devant l'API).
-    const q = await quota.consume(req.ip);
+    const q = await quota.consume(req.ip, userId);
     if (!q.ok) {
-      req.log.info({ status: 429, error: q.error }, "génération IA : quota dépassé");
+      req.log.info({ userId, status: 429, error: q.error }, "génération IA : quota dépassé");
       return reply.code(429).header("Retry-After", String(q.retryAfter)).send({ error: q.error, retryAfter: q.retryAfter });
     }
 
@@ -109,7 +139,7 @@ export const aiRoutes: FastifyPluginAsync<AiRoutesOptions> = async (app, opts) =
       });
       const status = result.valid ? 200 : 422;
       req.log.info(
-        { provider: result.provider, attempts: result.attempts, durationMs: Date.now() - started, status },
+        { userId, provider: result.provider, attempts: result.attempts, durationMs: Date.now() - started, status },
         "génération IA terminée",
       );
       if (result.valid) {

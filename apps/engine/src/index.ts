@@ -3,9 +3,10 @@ import Fastify from "fastify";
 import { authenticate, resolveScenario } from "./auth.js";
 import type { HifricaRequestContext } from "./context.js";
 import { registerConfirmations } from "./confirmations.js";
+import { publishEvent } from "./events.js";
 import { registerRequestLogging } from "./logs.js";
 import { startPaymentSession } from "./phone-session.js";
-import { buildResponse, findEndpoint, paymentPendingEvent } from "./response.js";
+import { buildResponse, findEndpoint, paymentPendingEvent, smsReceivedEvent } from "./response.js";
 import { loadSimulators } from "./simulators.js";
 import { parseDelay, render } from "./template.js";
 import { registerUssd } from "./ussd.js";
@@ -63,12 +64,27 @@ app.all<{ Params: { simulator: string; "*": string } }>("/:simulator/*", async (
   // Effets de bord uniquement sur succès : un 402 (solde insuffisant) ne crée ni session ni webhook.
   if (response.status >= 200 && response.status < 300) {
     if (endpoint.phone) {
-      const event = paymentPendingEvent({ projectId, simulator: sim.name, endpoint, ctx, response, requestId: req.id });
-      if (event) {
-        // A3 : la session est écrite dans Valkey AVANT la publication ; sans session, pas d'événement.
-        await startPaymentSession({ event, ctx, response, log: req.log });
+      const screen = endpoint.phone.screen ?? "confirm-payment";
+      if (screen === "confirm-payment") {
+        const event = paymentPendingEvent({ projectId, simulator: sim.name, endpoint, ctx, response, requestId: req.id });
+        if (event) {
+          // A3 : la session est écrite dans Valkey AVANT la publication ; sans session, pas d'événement.
+          await startPaymentSession({ event, ctx, response, log: req.log });
+        } else {
+          req.log.warn({ endpointId: endpoint.id }, "bloc phone sans payment.pending (id ou amount absent)");
+        }
+      } else if (screen === "sms") {
+        // Pas de session (contrairement au paiement) : une notification SMS n'attend aucune réponse du
+        // téléphone, elle est publiée directement. {{response.x}} lit ici la réponse déjà rendue (ex.
+        // un code de vérification), comme pour le corps d'un webhook.
+        const event = smsReceivedEvent({ projectId, endpoint, ctx: { ...ctx, response: response.body }, requestId: req.id });
+        if (event) {
+          await publishEvent(event, req.log).catch((err: unknown) => req.log.error({ err }, "publishEvent (sms.received) a échoué"));
+        } else {
+          req.log.warn({ endpointId: endpoint.id }, "bloc phone sms sans from/to/text");
+        }
       } else {
-        req.log.warn({ endpointId: endpoint.id }, "bloc phone sans payment.pending (écran non géré, id ou amount absent)");
+        req.log.warn({ endpointId: endpoint.id, screen }, "écran phone non géré");
       }
     }
     // Les webhooks avec "on" (ex. phone.confirm) sont déclenchés par l'événement correspondant (A4, confirmations.ts).
