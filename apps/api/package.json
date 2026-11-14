@@ -16,7 +16,8 @@
     "better-auth": "1.7.22",
     "drizzle-orm": "0.45.4",
     "fastify": "^5.6.1",
-    "ioredis": "^6.0.0"
+    "ioredis": "^6.0.0",
+    "yaml": "^2.9.1"
   },
   "devDependencies": {
     "@types/node": "^22.18.0",

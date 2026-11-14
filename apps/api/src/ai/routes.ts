@@ -11,6 +11,8 @@
 //   AI_USER_DAILY_LIMIT     générations par compte et par jour UTC ; défaut 20
 //   AI_DAILY_LIMIT          plafond global de générations par jour UTC ; défaut 100
 //   AI_REQUEST_DEADLINE_MS  échéance globale d'une requête ; défaut 90000 (504 ai_timeout au-delà)
+//   AI_DEEPSEEK_TIMEOUT_MS  délai d'un appel DeepSeek ; défaut 30000
+//   AI_GEMINI_TIMEOUT_MS    délai d'un appel Gemini ; défaut 45000 (les deux restent bornés par l'échéance globale)
 //   VALKEY_URL              compteurs de quota persistants (sinon en mémoire)
 import type { FastifyPluginAsync, FastifyRequest } from "fastify";
 import { requireUser, type AuthenticatedUser } from "../auth.js";
@@ -78,7 +80,7 @@ export const aiRoutes: FastifyPluginAsync<AiRoutesOptions> = async (app, opts) =
   if (!example) app.log.warn("Assistant IA : exemple de simulateur introuvable, prompt sans exemple");
   const system = buildSystemPrompt(example);
   app.log.info(
-    { providers: providers.map((p) => p.name), enabled, dailyLimit: quota.dailyLimit, userDailyLimit: quota.userDailyLimit, deadlineMs },
+    { providers: providers.map((p) => ({ name: p.name, timeoutMs: p.timeoutMs })), enabled, dailyLimit: quota.dailyLimit, userDailyLimit: quota.userDailyLimit, deadlineMs },
     "Assistant IA : configuration",
   );
 
