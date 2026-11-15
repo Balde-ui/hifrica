@@ -9,7 +9,7 @@ Projet présenté au concours CADEV 2026.
 - **Application** : https://app.hifrica.site
 - **Simulateurs** : https://sim.hifrica.site (pour les programmes ; ouvert dans un navigateur, renvoie au catalogue)
 
-> **État du projet.** Fonctionnent en ligne : le moteur HTTP et ses scénarios d'échec, les comptes, projets et clés, la console, le catalogue, l'éditeur et le fork, l'exécution par le moteur des simulateurs publiés, le téléphone simulé (confirmation d'un paiement par code secret, SMS, menus USSD) et la boutique de démonstration. Les webhooks signés et l'assistant IA sont décrits plus bas : leur fonctionnement complet en ligne, dont la réception des webhooks par la boutique de démonstration, n'est pas encore validé dans cette démonstration, et ils ne figurent pas dans le parcours ci-dessous.
+> **État du projet.** Fonctionnent en ligne : le moteur HTTP et ses scénarios d'échec, les comptes, projets et clés, la console, le catalogue, l'éditeur et le fork, l'exécution par le moteur des simulateurs publiés, le téléphone simulé (confirmation d'un paiement par code secret, SMS, menus USSD), les webhooks signés et leur réception par la boutique de démonstration, et l'assistant IA, qui dépend de la disponibilité de ses fournisseurs et des quotas décrits plus bas.
 
 ---
 
@@ -19,7 +19,7 @@ Projet présenté au concours CADEV 2026.
 
 1. Sur https://app.hifrica.site, cliquez sur **Créer un compte** (email et mot de passe de 8 caractères au moins, ou GitHub si le serveur l'a activé).
 2. Cliquez sur **Nouveau projet** (ou **Créer un projet** sur un compte neuf) et donnez-lui un nom.
-3. Dans **Clés API**, cliquez sur **Nouvelle clé**. La clé (`sk_test_` suivi de 43 caractères) s'affiche **une seule fois** : copiez-la tout de suite. Hifrica n'en garde que l'empreinte.
+3. Hifrica ouvre alors **Clés API** avec la fenêtre de création : cliquez sur **Créer la clé** (plus tard, **Nouvelle clé** ouvre la même fenêtre). La clé (`sk_test_` suivi de 43 caractères) s'affiche **une seule fois** : copiez-la tout de suite. Hifrica n'en garde que l'empreinte.
 
 ### 2. Appeler un simulateur
 
@@ -69,30 +69,41 @@ La page **Boutique démo** est la boutique d'un marchand fictif qui encaisse ave
 1. Choisissez le projet et collez sa clé de test (une clé créée pendant la session est reprise automatiquement).
 2. Composez le panier, puis cliquez sur **Payer par mobile money**. La boutique appelle `paiement-mobile-generique`, affiche la réponse reçue et passe « En attente de confirmation du client ».
 3. Le **téléphone simulé**, à côté de la boutique, reçoit la demande. Cliquez sur **Confirmer**, saisissez le code secret `0000`, puis **Valider** : le téléphone affiche « Paiement confirmé. ». Tout autre code refuse le paiement. Le code n'est jamais envoyé au serveur.
-4. La boutique, elle, reste « En attente de confirmation du client » : comme une vraie boutique, elle ne considère un paiement comme payé qu'à la réception du webhook signé `checkout.completed` (voir [Webhooks](#webhooks)).
-5. **Comportement du simulateur** choisit le scénario de tout le projet : avec **Solde insuffisant**, un panier de plus de 500 000 FCFA est refusé (`402`).
-6. **Recevoir un code** envoie un code à usage unique au numéro saisi, via le simulateur `otp-sms` : le SMS arrive sur le téléphone.
-7. Sur le téléphone, **Composer \*123#** ouvre le menu USSD du simulateur `mobile-money-ussd` (solde, envoi d'argent).
+4. Le message du téléphone ne vaut pas paiement pour la boutique : comme une vraie boutique, elle ne considère un paiement comme payé qu'à la réception du webhook signé `checkout.completed` (voir [Webhooks](#webhooks)). Dans la section « Confirmation automatique du paiement », sous le bouton de paiement, **Recevoir les webhooks dans la boutique** règle l'URL de webhook du projet sur la boutique : un seul clic si le projet n'a pas encore d'URL de webhook ; s'il en a déjà une, la page le signale et un second clic sur **Confirmer : remplacer l'URL de webhook** est demandé (**Annuler** pour garder l'URL actuelle, qui reste modifiable dans **Paramètres**). La section affiche alors le badge « **Connectée** ».
+5. Une fois ce récepteur branché, la boutique affiche, quelques secondes après la validation sur le téléphone, « **Paiement confirmé par webhook** » : le webhook a été reçu et sa signature vérifiée avec le secret du projet. Sans récepteur, elle reste « En attente de confirmation du client ».
+
+   ![Paiement confirmé par webhook dans la boutique](docs/captures/09-webhook-boutique.png)
+6. **Comportement du simulateur** choisit le scénario de tout le projet : avec **Solde insuffisant**, un panier de plus de 500 000 FCFA est refusé (`402`).
+7. **Recevoir un code** envoie un code à usage unique au numéro saisi, via le simulateur `otp-sms` : le SMS arrive sur le téléphone.
+8. Sur le téléphone, **Composer \*123#** ouvre le menu USSD du simulateur `mobile-money-ussd` (solde, envoi d'argent).
 
 ![Boutique de démonstration et téléphone simulé](docs/captures/04-boutique-telephone.png)
+
+**Tester votre propre application.** Le téléphone simulé reçoit les paiements de toute application qui appelle un simulateur avec une clé du projet, pas seulement ceux de la boutique. Pour valider ceux de votre application, ouvrez la page **Téléphone simulé** du projet **avant** de lancer le paiement : les paiements créés avant l'ouverture du téléphone ne sont pas récupérés. Le webhook signé part ensuite vers l'URL configurée dans **Paramètres**, c'est-à-dire votre serveur.
 
 ---
 
 ## Parcours de démonstration (jury)
 
-Environ 10 minutes sur https://app.hifrica.site, avec un navigateur récent. Aucun identifiant n'est fourni : on part d'un compte neuf.
+Environ 15 minutes sur https://app.hifrica.site, avec un navigateur récent. Aucun identifiant n'est fourni : on part d'un compte neuf.
 
 1. **Créer un compte** : **Commencer** sur la page d'accueil (ou **Créer un compte**), puis un nom, un email et un mot de passe de 8 caractères au moins, et **Créer mon compte**.
 2. **Créer un projet** : **Créer un projet** (ou **Nouveau projet** dans **Projets**), par exemple « Démo jury », puis **Créer le projet**. Hifrica ouvre ensuite la page **Clés API**.
-3. **Créer une clé de test** : **Nouvelle clé**, puis **Créer la clé**. Copiez la clé `sk_test_…` : elle ne s'affiche qu'une fois. La boutique de démonstration la reprend automatiquement pendant la session.
+3. **Créer une clé de test** : la fenêtre de création s'ouvre d'elle-même, cliquez sur **Créer la clé** (sinon : **Clés API**, puis **Nouvelle clé**). Copiez la clé `sk_test_…` : elle ne s'affiche qu'une fois. La boutique de démonstration la reprend automatiquement pendant la session.
 4. *(Facultatif, dans un terminal)* **Appeler un simulateur** avec les commandes `curl` de [2. Appeler un simulateur](#2-appeler-un-simulateur) et [3. Déclencher un échec](#3-déclencher-un-échec) : réponse `201`, puis `402`.
-5. **Payer dans la boutique** : **Boutique démo**, puis **Payer par mobile money**. La boutique affiche « En attente de confirmation du client », et le téléphone simulé reçoit la demande.
-6. **Confirmer sur le téléphone** : **Confirmer**, code `0000`, puis **Valider**. Le téléphone affiche « Paiement confirmé. » pendant quelques secondes. La boutique reste « En attente de confirmation du client » : elle attend le webhook signé, qui n'est pas inclus dans ce parcours (voir l'état du projet). Pour voir un refus, refaites un paiement et saisissez un autre code : « Code incorrect : paiement refusé. ».
-7. **Déclencher un échec** : **Comportement du simulateur** sur **Solde insuffisant**, ajoutez le groupe électrogène (650 000 FCFA), puis **Payer par mobile money**. La boutique affiche « Paiement refusé : solde insuffisant ». Repassez sur **Paiement accepté**.
-8. **USSD** : sur le téléphone, **Composer \*123#**, répondez `1` (Solde) puis **Envoyer**, saisissez un code à 4 chiffres puis **Envoyer** : « Votre solde est de 15 000 XOF. »
-9. **SMS** : dans le récapitulatif de la boutique, gardez le numéro proposé et cliquez sur **Recevoir un code**. Le SMS arrive dans la boîte du téléphone.
-10. **Voir chaque appel dans la console** : **Console**. Le checkout `201`, le refus `402` avec son scénario, les appels USSD et l'envoi du SMS y figurent, avec leur durée.
-11. **Catalogue et éditeur** : **Catalogue**, ouvrez `paiement-mobile-generique`, puis **Forker**. L'éditeur valide pendant la frappe : une erreur est soulignée sur sa ligne, et **Publier** reste grisé tant qu'elle n'est pas corrigée.
+5. **Brancher les webhooks** : **Boutique démo**, puis **Recevoir les webhooks dans la boutique**. Sur un projet neuf, sans URL de webhook, ce seul clic suffit. Si le projet a déjà une URL de webhook, un second clic sur **Confirmer : remplacer l'URL de webhook** la remplace. La section « Confirmation automatique du paiement » affiche alors le badge « **Connectée** ». Le téléphone simulé est affiché à côté de la boutique : gardez-le visible avant de payer.
+6. **Payer dans la boutique** : **Payer par mobile money**. La boutique affiche « En attente de confirmation du client » et « En attente du webhook signé », et le téléphone simulé reçoit la demande.
+7. **Confirmer sur le téléphone** : **Confirmer**, code `0000`, puis **Valider**. Deux confirmations distinctes apparaissent :
+   - **sur le téléphone**, « Paiement confirmé. » pendant quelques secondes : c'est la réponse du client, pas encore la preuve du paiement pour la boutique ;
+   - **dans la boutique**, quelques secondes plus tard, le cadre « **Paiement confirmé par webhook** », qui indique « Signature vérifiée avec le secret du projet » : c'est la confirmation effective, reçue par webhook signé.
+
+   Pour voir un refus, refaites un paiement et saisissez un autre code : le téléphone affiche « Code incorrect : paiement refusé. », et aucune confirmation n'arrive dans la boutique.
+8. **Déclencher un échec** : **Comportement du simulateur** sur **Solde insuffisant**, ajoutez le groupe électrogène (650 000 FCFA), puis **Payer par mobile money**. La boutique affiche « Paiement refusé : solde insuffisant ». Repassez sur **Paiement accepté**.
+9. **USSD** : sur le téléphone, **Composer \*123#**, répondez `1` (Solde) puis **Envoyer**, saisissez un code à 4 chiffres puis **Envoyer** : « Votre solde est de 15 000 XOF. »
+10. **SMS** : dans le récapitulatif de la boutique, gardez le numéro proposé et cliquez sur **Recevoir un code**. Le SMS arrive dans la boîte du téléphone.
+11. **Voir chaque appel dans la console** : **Console**. Le checkout `201`, le refus `402` avec son scénario, les appels USSD et l'envoi du SMS y figurent, avec leur durée. Dans **Paramètres**, l'**historique des webhooks** montre l'envoi `checkout.completed` et son résultat (`Livré`).
+12. **Catalogue et éditeur** : **Catalogue**, ouvrez `paiement-mobile-generique`, puis **Forker**. L'éditeur valide pendant la frappe : une erreur est soulignée sur sa ligne, et **Publier** reste grisé tant qu'elle n'est pas corrigée.
+13. **Assistant IA** : suivez l'[exemple de l'assistant IA](#exemple--une-api-de-transfert-dargent) (génération, relecture, publication, appel avec votre clé).
 
 ### En images
 
@@ -221,6 +232,17 @@ La page **Éditeur YAML** valide le YAML pendant la frappe et place chaque erreu
 Dans l'éditeur, **Générer avec l'IA** transforme une description en français en simulateur YAML. Le résultat est validé par le même schéma, corrigé automatiquement jusqu'à deux fois, puis marqué **« Généré par IA, à vérifier »** : relisez chaque endpoint et chaque scénario avant de publier.
 
 L'assistant est réservé aux utilisateurs connectés (sans session : `401 auth_required`), avec un quota par compte de 20 générations par jour UTC (`AI_USER_DAILY_LIMIT`). Il est désactivé tant que le serveur n'a pas `AI_GENERATION_ENABLED=true`. Les fournisseurs (DeepSeek, Gemini en secours), les données envoyées et les limites du masquage sont décrits dans [`AI_USAGE.md`](AI_USAGE.md).
+
+#### Exemple : une API de transfert d'argent
+
+1. Dans l'**Éditeur YAML**, cliquez sur **Générer avec l'IA**, décrivez le service, par exemple « Une API de transfert d'argent avec un scénario plafond dépassé », puis **Générer** (jusqu'à une minute et demie environ).
+2. **Examinez le YAML généré** : il est marqué « Généré par IA, à vérifier » et peut contenir des erreurs ou des réponses inexactes.
+3. **Vérifiez et ajustez** chaque endpoint et chaque scénario (ici, le scénario de plafond dépassé). Si le `name` est déjà utilisé par un autre simulateur, la publication est refusée (« Ce nom (name) est déjà utilisé par un autre simulateur : choisissez-en un autre. ») : changez-le.
+4. **Publiez** le simulateur, puis ouvrez **Voir sa documentation**.
+5. **Appelez l'API avec la clé du projet** : copiez l'**Exemple cURL** de la fiche, remplacez `sk_test_VOTRE_CLE` par votre clé et lancez-le (le moteur prend un nouveau simulateur en compte au plus 10 secondes après sa publication).
+6. **Vérifiez la réponse** : `201` pour un endpoint de création qui la déclare. Le statut renvoyé est celui que le YAML généré définit pour l'endpoint ; relisez-le à l'étape 3.
+
+L'assistant dépend de la disponibilité de ses fournisseurs et des quotas (20 générations par compte et par jour, 10 par heure et par adresse) : en cas de refus, réessayez plus tard.
 
 ---
 
