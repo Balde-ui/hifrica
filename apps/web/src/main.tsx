@@ -20,6 +20,7 @@ import { SettingsPage } from "./pages/Settings.js";
 import { CatalogPage } from "./pages/Catalog.js";
 import { SimulatorPage } from "./pages/Simulator.js";
 import { DemoShop } from "./pages/Demo.js";
+import { PhonePage } from "./pages/Phone.js";
 
 // L'éditeur (Monaco) n'est chargé qu'à l'ouverture de la page.
 const EditorPage = lazy(() => import("./pages/Editor.js").then((m) => ({ default: m.EditorPage })));
@@ -95,6 +96,7 @@ function Routes() {
   if (path === "/app/projets") return app([{ label: "Projets" }], <Protected><ProjectsPage /></Protected>);
   if (path === "/app/cles") return app([project, { label: "Clés API" }], <Protected><NeedsProject><KeysPage /></NeedsProject></Protected>);
   if (path === "/app/console") return app([project, { label: "Console" }], <Protected><NeedsProject><ConsolePage /></NeedsProject></Protected>);
+  if (path === "/app/telephone") return app([project, { label: "Téléphone simulé" }], <Protected><NeedsProject><PhonePage /></NeedsProject></Protected>);
   if (path === "/app/simulateurs") return app([project, { label: "Simulateurs" }], <Protected><NeedsProject><SimulatorsPage /></NeedsProject></Protected>);
   if (path === "/app/parametres") return app([project, { label: "Paramètres" }], <Protected><NeedsProject><SettingsPage /></NeedsProject></Protected>);
   if (match("/app/projets/:id", path)) return app([{ label: "Projets" }], <PageSkeleton />);
