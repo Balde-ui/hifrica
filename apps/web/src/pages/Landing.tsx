@@ -456,6 +456,7 @@ export function Landing() {
               <a href={`${REPO}/blob/main/LICENSE`} target="_blank" rel="noreferrer">Licence du code</a>
               <a href="https://creativecommons.org/licenses/by/4.0/deed.fr" target="_blank" rel="noreferrer">Simulateurs : CC BY 4.0</a>
               <a href={`${REPO}/blob/main/LICENSES.md`} target="_blank" rel="noreferrer">Licences des dépendances</a>
+              <Link to="/confidentialite">Confidentialité et mentions légales</Link>
               <a href={`${REPO}/blob/main/AI_USAGE.md`} target="_blank" rel="noreferrer">Usage de l'IA</a>
             </div>
             <div>
