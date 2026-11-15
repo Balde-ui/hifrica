@@ -20,6 +20,7 @@ import { SettingsPage } from "./pages/Settings.js";
 import { CatalogPage } from "./pages/Catalog.js";
 import { SimulatorPage } from "./pages/Simulator.js";
 import { DemoShop } from "./pages/Demo.js";
+import { PrivacyPage } from "./pages/Privacy.js";
 import { PhonePage } from "./pages/Phone.js";
 
 // L'éditeur (Monaco) n'est chargé qu'à l'ouverture de la page.
@@ -100,6 +101,7 @@ function Routes() {
   if (path === "/app/simulateurs") return app([project, { label: "Simulateurs" }], <Protected><NeedsProject><SimulatorsPage /></NeedsProject></Protected>);
   if (path === "/app/parametres") return app([project, { label: "Paramètres" }], <Protected><NeedsProject><SettingsPage /></NeedsProject></Protected>);
   if (match("/app/projets/:id", path)) return app([{ label: "Projets" }], <PageSkeleton />);
+  if (path === "/confidentialite") return app([{ label: "Confidentialité" }], <PrivacyPage />);
   if (path === "/catalogue") return app([{ label: "Catalogue" }], <CatalogPage />);
   if ((params = match("/catalogue/:slug", path))) {
     return app([{ label: "Catalogue", to: "/catalogue" }, { label: params.slug }], <SimulatorPage slug={params.slug} />);
