@@ -57,4 +57,17 @@ describe("smsReceivedEvent", () => {
     const { phone: _phone, ...withoutPhone } = endpoint;
     assert.equal(smsReceivedEvent({ projectId: "proj-1", endpoint: withoutPhone, ctx: { body: {}, query: {}, params: {} } }), undefined);
   });
+
+  it("to/from/text rendus trop longs (gabarit substitué par une valeur du client) sont tronqués, pas rejetés", () => {
+    const longPhone = "9".repeat(5000);
+    const longCode = "x".repeat(5000);
+    const ctx = { body: { phone: longPhone }, query: {}, params: {}, response: { code: longCode } };
+    const event = smsReceivedEvent({ projectId: "proj-1", endpoint, ctx });
+    assert.ok(event);
+    assert.equal(event.to.length, 40);
+    assert.equal(event.to, longPhone.slice(0, 40));
+    assert.equal(event.from, "HIFRICA"); // déjà court, inchangé
+    assert.equal(event.text.length, 500);
+    assert.equal(event.text, `Code : ${longCode}`.slice(0, 500));
+  });
 });

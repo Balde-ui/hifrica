@@ -47,6 +47,16 @@ function releaseSlot(userId: string): void {
 
 export function registerSse(app: FastifyInstance, deps: SseDeps = defaultDeps): void {
   app.get<{ Params: { id: string } }>("/api/projects/:id/stream", async (req, reply) => {
+    // Sec-Fetch-Site (navigateurs modernes) : un site tiers ne peut pas lire la réponse (pas d'en-tête
+    // CORS permissif), mais le navigateur enverrait quand même les cookies et ouvrirait la connexion,
+    // consommant une des MAX_STREAMS_PER_USER places de la victime pour rien. Rejeté avant toute
+    // authentification : ni travail inutile, ni place consommée. En-tête absent (vieux navigateur, ou
+    // client hors navigateur) : on laisse passer, cette vérification est une défense en profondeur,
+    // pas la seule protection.
+    if (req.headers["sec-fetch-site"] === "cross-site") {
+      return reply.code(403).send({ error: "cross_site_forbidden" });
+    }
+
     const projectId = req.params.id;
 
     const user = await deps.requireUser(req);

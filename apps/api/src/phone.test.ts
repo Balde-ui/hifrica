@@ -1,9 +1,16 @@
 import assert from "node:assert/strict";
+import { randomUUID } from "node:crypto";
 import { after, before, describe, it } from "node:test";
 import { isHifricaEvent, phoneSessionKey, projectChannel, type PhoneSession } from "@hifrica/shared";
 import Fastify, { type FastifyInstance } from "fastify";
 import { Redis } from "ioredis";
-import { registerPhoneAction, type PhoneActionDeps } from "./phone.js";
+import {
+  exceedsPhoneActionRateLimit,
+  PHONE_ACTION_RATE_LIMIT,
+  PHONE_ACTION_RATE_WINDOW_SEC,
+  registerPhoneAction,
+  type PhoneActionDeps,
+} from "./phone.js";
 import { registerValkey, sharedValkey } from "./valkey.js";
 
 // L'authentification réelle (Better Auth) n'est pas configurée dans ce test : on bouchonne requireUser/
@@ -148,6 +155,69 @@ describe(
       });
       assert.equal(longReason.statusCode, 400);
       assert.deepEqual(longReason.json(), { error: "invalid_reason" });
+    });
+
+    it(`au-delà de ${PHONE_ACTION_RATE_LIMIT} actions par fenêtre pour le même compte → 429, avec Retry-After`, async () => {
+      // Nettoie le compteur avant ET après (finally) : fakeAuth renvoie toujours le même id ("test-user"),
+      // partagé par tous les tests de ce fichier.
+      await sharedValkey()?.del("phone-action-rate:test-user");
+      try {
+        for (let i = 0; i < PHONE_ACTION_RATE_LIMIT; i++) {
+          const id = `it-rate-${i}-${Date.now()}`;
+          await seed(session({ sessionId: id }));
+          const res = await app.inject({ method: "POST", url: `/api/phone/${id}/action`, payload: { action: "confirm" } });
+          assert.equal(res.statusCode, 200, `action ${i + 1}/${PHONE_ACTION_RATE_LIMIT}`);
+        }
+        const id = `it-rate-blocked-${Date.now()}`;
+        await seed(session({ sessionId: id }));
+        const blocked = await app.inject({ method: "POST", url: `/api/phone/${id}/action`, payload: { action: "confirm" } });
+        assert.equal(blocked.statusCode, 429);
+        assert.deepEqual(blocked.json(), { error: "too_many_requests", retryAfter: PHONE_ACTION_RATE_WINDOW_SEC });
+        assert.equal(blocked.headers["retry-after"], String(PHONE_ACTION_RATE_WINDOW_SEC));
+
+        // La session n'a pas été consommée par la tentative bloquée : elle reste "pending".
+        const stored = JSON.parse((await admin.get(phoneSessionKey(id))) as string) as PhoneSession;
+        assert.equal(stored.status, "pending");
+      } finally {
+        await sharedValkey()?.del("phone-action-rate:test-user");
+      }
+    });
+  },
+);
+
+describe(
+  "exceedsPhoneActionRateLimit — limite de débit par compte (avec un vrai Valkey, TEST_VALKEY_URL)",
+  { skip: !process.env.TEST_VALKEY_URL },
+  () => {
+    const url = process.env.TEST_VALKEY_URL as string;
+    let app: FastifyInstance;
+
+    before(async () => {
+      app = Fastify({ logger: false });
+      registerValkey(app, { VALKEY_URL: url });
+      await waitFor(() => sharedValkey()?.status === "ready");
+    });
+
+    // Sans ce after(), le client Valkey partagé (ouvert par registerValkey ci-dessus) resterait connecté :
+    // le processus de test ne se termine jamais (socket ouvert = boucle d'événements jamais vide).
+    after(async () => {
+      await app.close();
+    });
+
+    it(`autorise jusqu'à ${PHONE_ACTION_RATE_LIMIT} actions par fenêtre, refuse la suivante`, async () => {
+      const userId = `rate-test-${randomUUID()}`;
+      for (let i = 0; i < PHONE_ACTION_RATE_LIMIT; i++) {
+        assert.equal(await exceedsPhoneActionRateLimit(userId), false, `action ${i + 1}/${PHONE_ACTION_RATE_LIMIT}`);
+      }
+      assert.equal(await exceedsPhoneActionRateLimit(userId), true, "la suivante dépasse la limite");
+    });
+
+    it("deux comptes ont des compteurs indépendants", async () => {
+      const a = `rate-test-${randomUUID()}`;
+      const b = `rate-test-${randomUUID()}`;
+      for (let i = 0; i < PHONE_ACTION_RATE_LIMIT; i++) await exceedsPhoneActionRateLimit(a);
+      assert.equal(await exceedsPhoneActionRateLimit(a), true, "a est épuisé");
+      assert.equal(await exceedsPhoneActionRateLimit(b), false, "b, un autre compte, n'est pas affecté");
     });
   },
 );

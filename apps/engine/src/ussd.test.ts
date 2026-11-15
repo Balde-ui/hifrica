@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { randomUUID } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { after, before, describe, it } from "node:test";
 import { isHifricaEvent, projectChannel, validateSimulatorYaml } from "@hifrica/shared";
@@ -6,7 +7,7 @@ import Fastify, { type FastifyInstance } from "fastify";
 import { Redis } from "ioredis";
 import "./context.js";
 import type { Simulator } from "./simulators.js";
-import { registerUssd } from "./ussd.js";
+import { exceedsUssdRateLimit, registerUssd, USSD_RATE_LIMIT, USSD_RATE_WINDOW_SEC } from "./ussd.js";
 import { registerValkey, sharedValkey } from "./valkey.js";
 
 const YAML = readFileSync(new URL("../../../simulators/mobile-money-ussd.yaml", import.meta.url), "utf8");
@@ -157,6 +158,57 @@ describe("moteur USSD — avec un vrai Valkey (TEST_VALKEY_URL)", { skip: !proce
     const sessionId = start.json().sessionId as string;
     const res = await dial({ sessionId, text: "1".repeat(182) }); // ne correspond à rien dans `on` → redemande start
     assert.equal(res.statusCode, 200);
+  });
+
+  it(`au-delà de ${USSD_RATE_LIMIT} appels par fenêtre pour le même projet → 429, avec Retry-After`, async () => {
+    // Nettoie le compteur avant ET après (finally) : les autres tests de ce fichier partagent le même
+    // projet "demo" (bouchon d'authentification sans base) et ne doivent pas hériter d'un compteur plein.
+    await sharedValkey()?.del("ussd-rate:demo");
+    try {
+      for (let i = 0; i < USSD_RATE_LIMIT; i++) {
+        const res = await dial({});
+        assert.equal(res.statusCode, 200, `appel ${i + 1}/${USSD_RATE_LIMIT}`);
+      }
+      const blocked = await dial({});
+      assert.equal(blocked.statusCode, 429);
+      assert.deepEqual(blocked.json(), { error: "too_many_requests", retryAfter: USSD_RATE_WINDOW_SEC });
+      assert.equal(blocked.headers["retry-after"], String(USSD_RATE_WINDOW_SEC));
+    } finally {
+      await sharedValkey()?.del("ussd-rate:demo");
+    }
+  });
+});
+
+describe("exceedsUssdRateLimit — limite de débit par projet (avec un vrai Valkey, TEST_VALKEY_URL)", { skip: !process.env.TEST_VALKEY_URL }, () => {
+  const url = process.env.TEST_VALKEY_URL as string;
+  let app: FastifyInstance;
+
+  before(async () => {
+    app = Fastify({ logger: false });
+    registerValkey(app, { VALKEY_URL: url });
+    await waitFor(() => sharedValkey()?.status === "ready");
+  });
+
+  // Sans ce after(), le client Valkey partagé (ouvert par registerValkey ci-dessus) resterait connecté :
+  // le processus de test ne se termine jamais (socket ouvert = boucle d'événements jamais vide).
+  after(async () => {
+    await app.close();
+  });
+
+  it(`autorise jusqu'à ${USSD_RATE_LIMIT} appels par fenêtre, refuse le suivant`, async () => {
+    const projectId = `rate-test-${randomUUID()}`;
+    for (let i = 0; i < USSD_RATE_LIMIT; i++) {
+      assert.equal(await exceedsUssdRateLimit(projectId), false, `appel ${i + 1}/${USSD_RATE_LIMIT}`);
+    }
+    assert.equal(await exceedsUssdRateLimit(projectId), true, "le suivant dépasse la limite");
+  });
+
+  it("deux projets ont des compteurs indépendants", async () => {
+    const a = `rate-test-${randomUUID()}`;
+    const b = `rate-test-${randomUUID()}`;
+    for (let i = 0; i < USSD_RATE_LIMIT; i++) await exceedsUssdRateLimit(a);
+    assert.equal(await exceedsUssdRateLimit(a), true, "a est épuisé");
+    assert.equal(await exceedsUssdRateLimit(b), false, "b, un autre projet, n'est pas affecté");
   });
 });
 
