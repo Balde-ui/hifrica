@@ -610,6 +610,23 @@ kbd { background: var(--surface-3); border: 1px solid var(--border-strong); bord
 .otp-field .label { color: #5b616a; }
 .otp-hint { font-size: 0.72rem; color: #5b616a; margin-top: 0.3rem; }
 .otp-error { font-size: 0.72rem; color: #8f1d17; margin-top: 0.3rem; }
+/* Réception des webhooks dans la boutique (C6) : action secondaire, sous le bouton « Payer », séparée par un filet.
+   Thème clair de la carte .checkout (comme .otp-*) ; contour de focus foncé, le vert de l'appli étant trop pâle sur blanc. */
+.demo-webhook { margin-top: 1rem; padding-top: 0.9rem; border-top: 1px solid #ebe8e1; font-size: 0.78rem; color: #5b616a; }
+.demo-webhook-head { display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; flex-wrap: wrap; }
+.demo-webhook h4 { margin: 0; font-size: 0.84rem; font-weight: 600; color: #1b1f24; }
+.demo-webhook-badge { display: inline-flex; align-items: center; gap: 0.3rem; padding: 0.1rem 0.5rem; border-radius: 999px; border: 1px solid #b7e2c8; background: #ecf8f1; color: #155c35; font-size: 0.72rem; font-weight: 600; }
+.demo-webhook-text { margin: 0.3rem 0 0; line-height: 1.45; }
+.demo-webhook-note { margin: 0.5rem 0 0; padding: 0.5rem 0.6rem; border-radius: 7px; background: #fdf6e7; border: 1px solid #f0dcae; color: #6b4a07; line-height: 1.45; }
+.demo-webhook code { background: #f3f1ec; color: #1b1f24; padding: 0 0.25rem; border-radius: 4px; word-break: break-all; }
+.demo-webhook-actions { display: flex; flex-wrap: wrap; gap: 0.4rem; margin-top: 0.6rem; }
+.demo-webhook-btn { flex: 1 1 auto; display: inline-flex; align-items: center; justify-content: center; gap: 0.4rem; height: auto; min-height: 32px; padding: 0.3rem 0.7rem; }
+.demo-webhook-cancel { flex: none; min-height: 32px; padding: 0 0.7rem; border: 1px solid transparent; border-radius: 7px; background: transparent; color: #5b616a; font-size: 0.8rem; cursor: pointer; }
+.demo-webhook-cancel:hover { color: #1b1f24; background: #f3f1ec; }
+.demo-webhook :focus-visible { outline: 2px solid #1b1f24; outline-offset: 2px; }
+.demo-webhook-status { margin: 0.5rem 0 0; display: flex; align-items: center; gap: 0.4rem; }
+.demo-webhook-error { margin: 0.5rem 0 0; color: #8f1d17; }
+.demo-webhook .pay-result { margin-top: 0.6rem; }
 .pay-result { margin-top: 0.9rem; border-radius: 8px; padding: 0.75rem 0.85rem; font-size: 0.84rem; border: 1px solid; }
 .pay-ok { background: #ecf8f1; border-color: #b7e2c8; color: #155c35; }
 .pay-ko { background: #fdf2e6; border-color: #f2cfa3; color: #8a4b0b; }

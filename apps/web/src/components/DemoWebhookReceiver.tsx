@@ -34,7 +34,10 @@ export function DemoWebhookReceiver({
   const connected = webhookUrl === receiver;
   const [busy, setBusy] = useState(false);
   const [confirmReplace, setConfirmReplace] = useState(false);
+  /** Échec du branchement (PATCH) : le bouton reste disponible pour réessayer. */
   const [error, setError] = useState<string | null>(null);
+  /** Échec d'une lecture des confirmations : la lecture suivante est retentée automatiquement. */
+  const [pollError, setPollError] = useState<string | null>(null);
   const [confirmation, setConfirmation] = useState<DemoConfirmation | null>(null);
   const [waiting, setWaiting] = useState<"idle" | "waiting" | "timeout">("idle");
 
@@ -46,6 +49,7 @@ export function DemoWebhookReceiver({
   // Attente de la confirmation signée du paiement en cours (seulement si le récepteur est branché).
   useEffect(() => {
     setConfirmation(null);
+    setPollError(null);
     if (!paymentId || !connected) {
       setWaiting("idle");
       return;
@@ -59,6 +63,7 @@ export function DemoWebhookReceiver({
       try {
         const r = await api<{ confirmations: DemoConfirmation[] }>(`/api/projects/${projectId}/demo/webhooks`, { signal: ctrl.signal });
         if (stopped) return;
+        setPollError(null);
         const found = r.confirmations.find((c) => c.paymentId === paymentId);
         if (found) {
           setConfirmation(found);
@@ -67,7 +72,7 @@ export function DemoWebhookReceiver({
         }
       } catch (err) {
         if (stopped) return;
-        setError(errorMessage(err));
+        setPollError(errorMessage(err));
       }
       if (Date.now() >= deadline) {
         setWaiting("timeout");
@@ -101,42 +106,78 @@ export function DemoWebhookReceiver({
     }
   }
 
+  const titleId = `demo-webhook-title-${projectId}`;
   return (
-    <div className="demo-webhook" data-testid="demo-webhook" style={{ marginTop: "0.8rem", fontSize: "0.78rem", color: "#5b616a" }}>
+    // Action secondaire de la zone de paiement : séparée du bouton « Payer » et de même thème clair que la carte
+    // (classes .demo-webhook*, .otp-btn de #26). Aucune confirmation n'est affichée sur un simple clic : seulement à
+    // la réception d'un webhook dont l'API a vérifié la signature, pour l'identifiant de ce checkout.
+    <section className="demo-webhook" data-testid="demo-webhook" aria-labelledby={titleId}>
+      <div className="demo-webhook-head">
+        <h4 id={titleId}>Confirmation automatique du paiement</h4>
+        {connected && (
+          <span className="demo-webhook-badge" data-testid="demo-webhook-connected">
+            <span aria-hidden="true">●</span> Connectée
+          </span>
+        )}
+      </div>
+
       {connected ? (
-        <p style={{ margin: 0 }}>
-          <span aria-hidden="true">● </span>
-          Webhooks reçus par la boutique : les paiements validés sur le téléphone arrivent ici, signés par Hifrica.
-        </p>
+        <p className="demo-webhook-text">Les paiements validés sur le téléphone seront reçus par la boutique, signés par Hifrica.</p>
       ) : (
         <>
-          <button type="button" className="btn btn-sm" disabled={busy} onClick={() => void connect()} style={{ width: "100%" }}>
-            {busy ? <Spinner /> : confirmReplace ? "Confirmer : remplacer l'URL de webhook" : "Recevoir les webhooks dans la boutique"}
-          </button>
-          <p style={{ margin: "0.35rem 0 0" }}>
-            {confirmReplace ? (
-              <>
-                Le projet envoie déjà ses webhooks à <code style={{ wordBreak: "break-all" }}>{webhookUrl}</code>. Cette URL sera remplacée par le
-                récepteur de la boutique (modifiable ensuite dans Paramètres).
-              </>
-            ) : (
-              "Règle l'URL de webhook du projet sur la boutique, pour afficher la confirmation signée du paiement."
+          <p className="demo-webhook-text">Connectez cette boutique aux webhooks du projet pour recevoir automatiquement la confirmation du paiement.</p>
+          {webhookUrl && (
+            <p className="demo-webhook-note" role={confirmReplace ? "alert" : undefined}>
+              {confirmReplace ? "Confirmez le remplacement : " : "Une URL de webhook est déjà configurée pour ce projet : "}
+              <code>{webhookUrl}</code>.{" "}
+              {confirmReplace
+                ? "Elle sera remplacée par le récepteur de la boutique (modifiable ensuite dans Paramètres)."
+                : "Une confirmation vous sera demandée avant de la remplacer."}
+            </p>
+          )}
+          <div className="demo-webhook-actions">
+            <button type="button" className="otp-btn demo-webhook-btn" disabled={busy} aria-busy={busy} onClick={() => void connect()}>
+              {busy ? (
+                <>
+                  <Spinner /> Connexion…
+                </>
+              ) : confirmReplace ? (
+                "Confirmer : remplacer l'URL de webhook"
+              ) : (
+                "Recevoir les webhooks dans la boutique"
+              )}
+            </button>
+            {confirmReplace && !busy && (
+              <button type="button" className="demo-webhook-cancel" onClick={() => setConfirmReplace(false)}>
+                Annuler
+              </button>
             )}
-          </p>
+          </div>
+          {error && (
+            <p className="demo-webhook-error" role="alert">
+              Connexion impossible : {error} Réessayez.
+            </p>
+          )}
         </>
       )}
+
       {connected && waiting === "waiting" && (
-        <p style={{ margin: "0.35rem 0 0" }} role="status">
+        <p className="demo-webhook-status" role="status">
           <Spinner /> En attente du webhook signé : validez le paiement sur le téléphone.
         </p>
       )}
       {connected && waiting === "timeout" && (
-        <p style={{ margin: "0.35rem 0 0" }} role="status">
+        <p className="demo-webhook-status" role="status">
           Aucun webhook reçu pour ce paiement. Consultez l'historique des webhooks du projet.
         </p>
       )}
+      {connected && pollError && waiting === "waiting" && (
+        <p className="demo-webhook-error" role="alert">
+          Lecture des confirmations impossible ({pollError}) : nouvel essai automatique.
+        </p>
+      )}
       {confirmation && (
-        <div className="pay-result pay-ok" role="status" data-testid="demo-webhook-confirmed" style={{ marginTop: "0.5rem" }}>
+        <div className="pay-result pay-ok" role="status" data-testid="demo-webhook-confirmed">
           <strong>Paiement confirmé par webhook</strong>
           <div style={{ marginTop: "0.2rem" }}>
             La boutique a reçu « {confirmation.event} » signé pour {String(confirmation.amount)} {confirmation.currency ?? ""} (paiement{" "}
@@ -145,7 +186,6 @@ export function DemoWebhookReceiver({
           </div>
         </div>
       )}
-      {error && <p style={{ margin: "0.35rem 0 0", color: "#c0392b" }}>{error}</p>}
-    </div>
+    </section>
   );
 }
