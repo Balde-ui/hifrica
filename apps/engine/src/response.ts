@@ -17,6 +17,12 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === "object" && !Array.isArray(value);
 }
 
+/** Bornes du schéma pour le bloc phone (packages/shared/src/schema.ts) : from/to ≤ 40, text ≤ 500. Un
+ * gabarit comme to: "{{body.phone}}" substitue une valeur du client (non bornée côté moteur) ; on applique
+ * ici la même limite défensive qu'aux champs statiques, pour éviter un événement de taille arbitraire. */
+const SMS_SENDER_MAX_LENGTH = 40;
+const SMS_TEXT_MAX_LENGTH = 500;
+
 /** Premier endpoint du simulateur qui correspond à la méthode et au chemin reçus. */
 export function findEndpoint(
   sim: Simulator,
@@ -127,9 +133,9 @@ export function smsReceivedEvent(args: {
     type: "sms.received",
     messageId: randomUUID(),
     projectId,
-    from: String(render(phone.from, ctx)),
-    to: String(render(phone.to, ctx)),
-    text: String(render(phone.text, ctx)),
+    from: String(render(phone.from, ctx)).slice(0, SMS_SENDER_MAX_LENGTH),
+    to: String(render(phone.to, ctx)).slice(0, SMS_SENDER_MAX_LENGTH),
+    text: String(render(phone.text, ctx)).slice(0, SMS_TEXT_MAX_LENGTH),
     createdAt: new Date().toISOString(),
     ...(requestId !== undefined ? { requestId } : {}),
   };

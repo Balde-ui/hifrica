@@ -23,6 +23,10 @@ const USSD_SESSION_TTL_SEC = 180;
 /** Limite réelle d'un écran/d'une saisie USSD (contrainte du schéma YAML partagé, appliquée ici aussi
  * côté saisie utilisateur et côté texte rendu, qu'un gabarit peut faire dépasser). */
 const USSD_MAX_LENGTH = 182;
+/** Débit maximal par projet (toutes sessions confondues) : une clé valide ne doit pas pouvoir marteler
+ * la route (fenêtre fixe, INCR + EXPIRE, comme le quota de l'assistant IA). */
+export const USSD_RATE_LIMIT = 60;
+export const USSD_RATE_WINDOW_SEC = 60;
 
 interface UssdSessionState {
   projectId: string;
@@ -49,6 +53,24 @@ function resolveNextMenuKey(current: UssdMenu, currentKey: string, input: string
   return currentKey;
 }
 
+function ussdRateKey(projectId: string): string {
+  return `ussd-rate:${projectId}`;
+}
+
+/** Fenêtre fixe par projet. Valkey injoignable : ne bloque jamais la requête, la limite est une protection
+ * en profondeur, pas une garantie (comme le repli en mémoire du quota IA plutôt qu'un échec dur).
+ * Exportée pour les tests (évite de faire 61 vraies requêtes HTTP contre le projet "demo" partagé). */
+export async function exceedsUssdRateLimit(projectId: string): Promise<boolean> {
+  try {
+    const key = ussdRateKey(projectId);
+    const count = await runCommand((c) => c.incr(key));
+    if (count === 1) await runCommand((c) => c.expire(key, USSD_RATE_WINDOW_SEC));
+    return count > USSD_RATE_LIMIT;
+  } catch {
+    return false;
+  }
+}
+
 /** `simulators` : fichiers de simulators/ (Map) ou résolveur du catalogue (fichiers puis simulateurs publiés, A). */
 export function registerUssd(app: FastifyInstance, simulators: SimulatorSource): void {
   const resolveSimulator = toResolver(simulators);
@@ -70,6 +92,10 @@ export function registerUssd(app: FastifyInstance, simulators: SimulatorSource):
       const auth = await authenticate(req);
       if (!auth.ok) return reply.code(401).send({ error: "invalid_test_key" });
       const { projectId } = auth;
+
+      if (await exceedsUssdRateLimit(projectId)) {
+        return reply.code(429).header("Retry-After", String(USSD_RATE_WINDOW_SEC)).send({ error: "too_many_requests", retryAfter: USSD_RATE_WINDOW_SEC });
+      }
 
       // Visible dans la console (C4) : même mécanisme que les simulateurs HTTP, channel: "ussd".
       const hifrica: HifricaRequestContext = { simulator: sim.name, channel: "ussd", projectId };

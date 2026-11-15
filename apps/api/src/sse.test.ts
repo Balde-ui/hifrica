@@ -12,9 +12,9 @@ const fakeDeps: SseDeps = {
 };
 
 /** Ouvre une connexion au flux et résout dès que les en-têtes (200) sont reçus, sans attendre la fin. */
-function openStream(port: number): Promise<{ req: http.ClientRequest; status: number }> {
+function openStream(port: number, headers: Record<string, string> = {}): Promise<{ req: http.ClientRequest; status: number }> {
   return new Promise((resolve, reject) => {
-    const req = http.get({ host: "127.0.0.1", port, path: "/api/projects/demo/stream" }, (res) => {
+    const req = http.get({ host: "127.0.0.1", port, path: "/api/projects/demo/stream", headers }, (res) => {
       resolve({ req, status: res.statusCode ?? 0 });
       res.resume(); // ne bloque jamais sur le corps : on ne lit pas les événements dans ce test.
     });
@@ -119,6 +119,44 @@ describe("GET /api/projects/:id/stream — limite de connexions (avec un vrai Va
     const after1 = await openStream(port);
     assert.equal(after1.status, 200);
     after1.req.destroy();
+  });
+
+  it("Sec-Fetch-Site: cross-site → 403, sans authentifier ni consommer de place", async () => {
+    resetStreamLimitsForTests();
+    let authCalled = false;
+    const trackingDeps: SseDeps = {
+      requireUser: async () => {
+        authCalled = true;
+        return USER;
+      },
+      assertProjectOwner: async () => true,
+    };
+    const trackingApp = Fastify({ logger: false });
+    registerSse(trackingApp, trackingDeps);
+    await trackingApp.listen({ port: 0, host: "127.0.0.1" });
+    const address = trackingApp.server.address();
+    if (!address || typeof address === "string") throw new Error("adresse du serveur introuvable");
+
+    try {
+      const { req, status } = await openStream(address.port, { "sec-fetch-site": "cross-site" });
+      req.destroy();
+      assert.equal(status, 403);
+      assert.equal(authCalled, false, "un site tiers ne doit même pas déclencher l'authentification");
+    } finally {
+      await trackingApp.close();
+    }
+  });
+
+  it("Sec-Fetch-Site: same-origin, ou en-tête absent (vieux navigateur, curl) → traité normalement", async () => {
+    resetStreamLimitsForTests();
+    const same = await openStream(port, { "sec-fetch-site": "same-origin" });
+    assert.equal(same.status, 200);
+    same.req.destroy();
+
+    resetStreamLimitsForTests();
+    const noHeader = await openStream(port);
+    assert.equal(noHeader.status, 200);
+    noHeader.req.destroy();
   });
 });
 

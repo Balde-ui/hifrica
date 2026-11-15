@@ -18,9 +18,30 @@ import { assertProjectOwner, requireUser, type AuthenticatedUser } from "./auth.
 import { runCommand } from "./valkey.js";
 
 const MAX_REASON_LENGTH = 64;
+/** Débit maximal par compte connecté (fenêtre fixe, INCR + EXPIRE, comme le quota de l'assistant IA) :
+ * une session étant un UUID imprévisible, la limite protège surtout contre un compte qui martèle la route. */
+export const PHONE_ACTION_RATE_LIMIT = 30;
+export const PHONE_ACTION_RATE_WINDOW_SEC = 60;
 
 function actionLockKey(sessionId: string): string {
   return `${phoneSessionKey(sessionId)}:action`;
+}
+
+function phoneActionRateKey(userId: string): string {
+  return `phone-action-rate:${userId}`;
+}
+
+/** Valkey injoignable : ne bloque jamais la requête, c'est une protection en profondeur, pas une garantie.
+ * Exportée pour les tests (évite de faire 31 vraies requêtes HTTP pour un seul cas). */
+export async function exceedsPhoneActionRateLimit(userId: string): Promise<boolean> {
+  try {
+    const key = phoneActionRateKey(userId);
+    const count = await runCommand((c) => c.incr(key));
+    if (count === 1) await runCommand((c) => c.expire(key, PHONE_ACTION_RATE_WINDOW_SEC));
+    return count > PHONE_ACTION_RATE_LIMIT;
+  } catch {
+    return false;
+  }
 }
 
 interface ActionBody {
@@ -50,6 +71,13 @@ export function registerPhoneAction(app: FastifyInstance, deps: PhoneActionDeps 
 
     const user = await deps.requireUser(req);
     if (!user) return reply.code(401).send({ error: "unauthorized" });
+
+    if (await exceedsPhoneActionRateLimit(user.id)) {
+      return reply.code(429).header("Retry-After", String(PHONE_ACTION_RATE_WINDOW_SEC)).send({
+        error: "too_many_requests",
+        retryAfter: PHONE_ACTION_RATE_WINDOW_SEC,
+      });
+    }
 
     let session: PhoneSession;
     try {
