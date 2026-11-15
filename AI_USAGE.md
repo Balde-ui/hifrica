@@ -6,13 +6,20 @@ Déclaration exigée par l'article 6 du règlement CADEV 2026 : outils utilisés
 
 | Outil | Utilisé par | Parties concernées | Relu et maîtrisé par |
 | --- | --- | --- | --- |
-| Claude (Anthropic) | Alhassane | Cahier des charges, squelette initial du monorepo (structure, docker-compose, Caddyfile, CI/CD, schéma YAML partagé, première version du moteur de simulation), documents de conformité | L'équipe |
+| Claude (Anthropic) | Alhassane | Cahier des charges, squelette initial du monorepo (structure, docker-compose, Caddyfile, CI/CD, schéma YAML partagé, première version du moteur de simulation), documents de conformité, coordination de l'équipe (chronologie des tâches, contrats entre services), rédaction des consignes données à Claude Code, relecture et tests de fusion des pull requests, analyse des incidents de production, documents de soumission | L'équipe |
 | Claude Code | Alhassane | A0 : découpage du moteur en modules | Alhassane, relu en PR par B ou C |
 | Claude Code | Alhassane | A1 : assistant IA (génération de simulateurs) | Alhassane, relu en PR par B ou C |
 | Claude Code | Alhassane | A2 : webhooks signés (file BullMQ, HMAC, relances, protection SSRF) | Alhassane, relu en PR par B ou C |
 | Claude Code | Alhassane | A3 + A4 : session de paiement et webhook sur confirmation | Alhassane, relu en PR par B et C |
 | Claude Code | Alhassane | A5 : webhooks par projet et historique des envois | Alhassane, relu en PR par B et C |
 | Claude Code | Alhassane | Exécution par le moteur des simulateurs publiés depuis l'éditeur (`getExecutableSimulator` dans `packages/db`, catalogue et cache du moteur) | Alhassane, relu en PR par B et C |
+| Claude Code | Alhassane | Signature des webhooks partagée (`@hifrica/shared/webhook-signature`) | Alhassane, relu en PR par C (#18) |
+| Claude Code | Alhassane | Assistant IA réservé aux comptes connectés (`401 auth_required`), quota par compte (`AI_USER_DAILY_LIMIT`), suite à l'audit de B | Alhassane, relu en PR par B (#23) |
+| Claude Code | Alhassane | Génération automatique de `LICENSES.md` (`pnpm licenses:md`, contrôle en CI), mise à jour de AI_USAGE et du README | Alhassane, relu par C avant fusion (confirmé en commentaire sur la PR #19) |
+| Claude Code | Alhassane | Redirection des navigateurs de `sim.hifrica.site` vers le catalogue | Alhassane, relu par C avant fusion (confirmé en commentaire sur la PR #27) |
+| Claude Code | Alhassane | Robustesse de l'assistant IA (incident R3) : analyse tolérante des réponses des modèles, diagnostic de forme sans contenu, délais par fournisseur | Alhassane, relu par C avant fusion (confirmé en commentaire sur la PR #32) |
+| Claude Code | Alhassane | Robustesse de l'assistant IA (suite) : réparation du JSON de DeepSeek (retours à la ligne bruts), phrase d'introduction ignorée, opérateurs de `match` autorisés dans le prompt | Alhassane, relu en PR par B (#33) |
+| Claude Code | Alhassane | Robustesse de l'assistant IA (suite) : valeur `yaml` récupérée malgré des guillemets non échappés, réessai Gemini sur 503 et 429 | Alhassane, relu par C avant fusion (confirmé en commentaire sur la PR #34) |
 | Claude Code | Iza | B0 : types d'événements temps réel partagés (`packages/shared`) | Iza, relu en PR par A |
 | Claude Code | Iza | B1 : route SSE (`/api/projects/:id/stream`) et route de confirmation téléphone | Iza, relu en PR par A et C |
 | Claude Code | Iza | B2 : écran du téléphone simulé (interface) | Iza, relu en PR par A |
@@ -26,9 +33,8 @@ Déclaration exigée par l'article 6 du règlement CADEV 2026 : outils utilisés
 | Claude Code | Mamadou | Vue d'ensemble du projet (`apps/web/src/pages/Overview.tsx`) : utilisation sur 60 min / 24 h / 7 jours calculée sur le journal réel, statistiques partielles signalées au-delà de 500 requêtes, étapes « Bien démarrer », fenêtre « Connecter » | Mamadou, fusionnée par A (#24) |
 | Claude Code | Mamadou | Coquille du tableau de bord (barre latérale à trois modes, en-tête, menu du compte), validation serveur du nom à l'inscription, messages d'erreur de l'assistant IA, logo et favicons | Mamadou, fusionnée par A (#24) |
 | Claude Code | Mamadou | Cadre de smartphone générique de la boutique de démonstration (`DeviceFrame.tsx`, `device-frame.css`) autour du téléphone simulé de B, inchangé | Mamadou, en revue par A (#29) |
-| _à compléter_ | | | |
 
-Chaque contribution produite avec une IA est relue en pull request par un autre membre avant fusion, et les trois membres savent l'expliquer.
+Chaque contribution produite avec une IA est relue ou vérifiée par un autre membre, sur GitHub ou directement au sein de l'équipe. La colonne « Relu et maîtrisé par » indique qui l'a fait et, si besoin, quand ; une relecture faite hors GitHub est confirmée après coup en commentaire sur la PR. Les trois membres savent l'expliquer.
 
 ## 2. LLM intégrés au produit (assistant IA de Hifrica)
 
