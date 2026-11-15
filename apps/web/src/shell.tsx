@@ -28,6 +28,7 @@ const NAV: { title: string; items: NavEntry[] }[] = [
       { to: "/app/projets", label: "Projets", icon: "folder", auth: true },
       { to: "/app/cles", label: "Clés API", icon: "key", auth: true, needsProject: true },
       { to: "/app/console", label: "Console", icon: "terminal", auth: true, needsProject: true },
+      { to: "/app/telephone", label: "Téléphone simulé", icon: "phone", auth: true, needsProject: true },
       { to: "/app/simulateurs", label: "Simulateurs", icon: "layers", auth: true, needsProject: true },
     ],
   },
