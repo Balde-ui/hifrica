@@ -263,7 +263,7 @@ Quand un endpoint a un bloc `phone` (écran `confirm-payment`, par défaut) et q
 
 La session se confirme ou se refuse par `POST /api/phone/{session}/action`, avec `{"action": "confirm"}` ou `{"action": "reject", "reason": "wrong_pin"}` (`reason` facultatif, 64 caractères au plus). La route est réservée au propriétaire du projet, connecté à l'interface. La première action reçue l'emporte ; une seconde reçoit `409 {"error":"already_handled"}`, une session inconnue ou expirée `404`. L'action déclenche le webhook `on: phone.confirm` ou `on: phone.reject` de l'endpoint, une seule fois. Le PIN n'est jamais envoyé au serveur.
 
-Dans l'interface, c'est le **téléphone simulé** de la page **Boutique démo** qui appelle cette route : **Confirmer**, puis le code secret `0000`, confirme le paiement ; tout autre code le refuse avec `reason: "wrong_pin"`.
+Dans l'interface, c'est le **téléphone simulé** (pages **Boutique démo** et **Téléphone simulé**) qui appelle cette route : **Confirmer**, puis le code secret `0000`, confirme le paiement ; tout autre code le refuse avec `reason: "wrong_pin"`.
 
 ### Format
 
