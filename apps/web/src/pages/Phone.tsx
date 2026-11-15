@@ -34,9 +34,11 @@ export function PhonePage() {
       <div className="row-nw" style={{ gap: "1rem", alignItems: "flex-start", flexWrap: "wrap" }}>
         <div className="panel" style={{ flex: "1 1 380px", minWidth: 0 }}>
           <div className="panel-head">
-            <h2>Projet écouté</h2>
-            <span className="live" data-testid="phone-listening">
-              <span className="dot" /> À l'écoute des paiements de ce projet
+            <h2>Projet</h2>
+            {/* État de disponibilité, pas de connexion : SimulatedPhone n'expose pas l'état réel du flux SSE.
+                Icône fixe (pas de point vert pulsé), pour ne pas laisser croire à une connexion vérifiée. */}
+            <span className="live" data-testid="phone-ready">
+              <Icon name="phone" size={14} /> Prêt à recevoir les paiements de ce projet
             </span>
           </div>
           <div className="panel-body stack">
@@ -45,7 +47,7 @@ export function PhonePage() {
             </p>
 
             <Alert kind="warn">
-              Ouvrez cette page avant de lancer un paiement. Les demandes créées avant son ouverture ne seront pas récupérées.
+              Ouvrez cette page avant de lancer un paiement depuis votre application. Les paiements créés avant l'ouverture du téléphone ne sont pas récupérés.
             </Alert>
 
             <div>
